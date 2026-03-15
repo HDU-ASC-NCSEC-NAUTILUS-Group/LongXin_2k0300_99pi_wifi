@@ -34,14 +34,18 @@
 #include "zf_common_headfile.h"
 #include "defines.h"
 #include "Menu.h"
+#include "Key.h"
 
 int main(int, char**) 
 {
     // 外设初始化
     Peripheral_Init();
 
+    // 初始化10ms定时器，定时调用Key_Tick函数
+    pit_ms_init(10, Key_Tick);
+
     while(1)
     {
-        Menu_Show();
+//        Menu_Show();
     }
 }

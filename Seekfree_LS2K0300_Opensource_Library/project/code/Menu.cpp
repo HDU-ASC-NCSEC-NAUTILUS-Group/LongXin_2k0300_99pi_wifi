@@ -1,6 +1,7 @@
 
 #include "zf_common_headfile.h"
 #include "defines.h"
+#include "Key.h"
 
 #include "Debug_Page.h"
 
@@ -15,7 +16,7 @@ void Peripheral_Init(void)
     // IPS200 初始化
     ips200_init("/dev/fb0");
     ips200_clear();  // 清屏为默认背景色（白色）
-//    ips200_full(RGB565_BLACK);    // 填充黑色
+//    ips200_full(RGB565_BLACK);    // 填充黑色 
 }
 
 /*******************************************************************************************************************/
@@ -63,25 +64,26 @@ void Menu_Show(void)
 		uint8_t key_pressed = 0;
 
         /* 按键处理*/
-        if (gpio_get_level(KEY_UP) == 0)
+        if (Key_Check(KEY_UP,KEY_SINGLE))
         {
             key_pressed = 1;
             menu_flag --;
             if (menu_flag < 1)menu_flag = 1;
         }
-        else if (gpio_get_level(KEY_DOWN) == 0)
+        else if (Key_Check(KEY_DOWN,KEY_SINGLE))
         {
             key_pressed = 1;
             menu_flag ++;
             if (menu_flag > 1)menu_flag = 1;
         }
-        else if (gpio_get_level(KEY_CONFIRM) == 0)
+        else if (Key_Check(KEY_CONFIRM,KEY_SINGLE))
         {
             menu_flag_temp = menu_flag;
         }
-//       else if (gpio_get_level(KEY_BACK) == 0)
+//        else if (Key_Check(KEY_BACK,KEY_SINGLE))
 //        {
-//
+//            // 返回上一级界面
+//            return 0;   
 //        }
 
 

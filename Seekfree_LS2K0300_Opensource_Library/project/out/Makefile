@@ -633,6 +633,30 @@ home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Librar
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/project.dir/build.make CMakeFiles/project.dir/home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Debug_Page.cpp.s
 .PHONY : home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Debug_Page.cpp.s
 
+home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.o: home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.cpp.o
+.PHONY : home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.o
+
+# target to build an object file
+home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/project.dir/build.make CMakeFiles/project.dir/home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.cpp.o
+.PHONY : home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.cpp.o
+
+home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.i: home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.cpp.i
+.PHONY : home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.i
+
+# target to preprocess a source file
+home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/project.dir/build.make CMakeFiles/project.dir/home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.cpp.i
+.PHONY : home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.cpp.i
+
+home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.s: home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.cpp.s
+.PHONY : home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.s
+
+# target to generate assembly for a file
+home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/project.dir/build.make CMakeFiles/project.dir/home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.cpp.s
+.PHONY : home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.cpp.s
+
 home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Menu.o: home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Menu.cpp.o
 .PHONY : home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Menu.o
 
@@ -753,6 +777,9 @@ help:
 	@echo "... home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Debug_Page.o"
 	@echo "... home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Debug_Page.i"
 	@echo "... home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Debug_Page.s"
+	@echo "... home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.o"
+	@echo "... home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.i"
+	@echo "... home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Key.s"
 	@echo "... home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Menu.o"
 	@echo "... home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Menu.i"
 	@echo "... home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Menu.s"

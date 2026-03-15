@@ -1,6 +1,7 @@
 
 #include "zf_common_headfile.h"
 #include "defines.h"
+#include "Key.h"
 
 
 /*******************************************************************************************************************/
@@ -16,7 +17,7 @@ void Debug_Page_Menu_UI(uint8_t Page)
 		case 1:
 			ips200_show_string(8  , 0  , "Debug");
 			ips200_show_string(0  , 16 , "==============================");
-			ips200_show_string(10 , 32 , "???");
+			ips200_show_string(10 , 32 , "BUZ");
 		
 			break;
 	}
@@ -29,6 +30,9 @@ void Debug_Page_Menu_UI(uint8_t Page)
 /*******************************************************************************************************************/
 /*[S] 交互界面 [S]--------------------------------------------------------------------------------------------------*/
 /*******************************************************************************************************************/
+
+// 相关函数提前声明
+int Debug_BUZ       (void);
 
 // [二级界面]Debug模式界面
 int Debug_Page_Menu(void)
@@ -47,35 +51,44 @@ int Debug_Page_Menu(void)
 		uint8_t key_pressed = 0;
 
         /* 按键处理*/
-        if (gpio_get_level(KEY_UP) == 0)
+        if (Key_Check(KEY_UP,KEY_SINGLE))
         {
             key_pressed = 1;
             Debug_Page_flag --;
             if (Debug_Page_flag < 1)Debug_Page_flag = 1;
         }
-        else if (gpio_get_level(KEY_DOWN) == 0)
+        else if (Key_Check(KEY_DOWN,KEY_SINGLE))
         {
             key_pressed = 1;
             Debug_Page_flag ++;
             if (Debug_Page_flag > 1)Debug_Page_flag = 1;
         }
-        else if (gpio_get_level(KEY_CONFIRM) == 0)
+        else if (Key_Check(KEY_CONFIRM,KEY_SINGLE))
         {
             Debug_Page_flag_temp = Debug_Page_flag;
         }
-       else if (gpio_get_level(KEY_BACK) == 0)
-       {
+        else if (Key_Check(KEY_BACK,KEY_SINGLE))    
+        {
             // 返回上一级界面
             return 0;   
-       }
+        }
 
 
-       /* 模式跳转*/
+        /* 模式跳转*/
+        if (Debug_Page_flag_temp == 1)
+        {
+            ips200_clear();
+            Debug_BUZ();
+            
+            // 从子界面返回后
+            ips200_clear();
+            Debug_Page_Menu_UI(1);
+            ips200_show_string(0  ,32 , ">");
+        }
 
-
-       /* 显示更新*/
-       if (key_pressed)
-       {
+        /* 显示更新*/
+        if (key_pressed)
+        {
             switch (Debug_Page_flag)
             {
                 case 1:
@@ -84,9 +97,54 @@ int Debug_Page_Menu(void)
 
                     break;
             }
-       }
+        }
     }
 }
+
+//	####   #   #  #####
+//	#   #  #   #     #  
+//	####   #   #    #  
+//	#   #  #   #   #   
+//	####    ###   ##### 
+//
+// [三级界面]蜂鸣器调试
+int Debug_BUZ(void)
+{
+    ips200_show_string(8  , 0  , "BUZ");
+    ips200_show_string(0  , 16 , "==============================");
+    ips200_show_string(10 , 32 , "ON ");
+
+    uint8_t BUZ_flag = 0;
+
+    while(1)
+    {
+
+        // 按键处理
+        if (Key_Check(KEY_CONFIRM,KEY_SINGLE))
+        {
+            BUZ_flag = 1 - BUZ_flag;
+            if (BUZ_flag)
+            {
+                // 开启蜂鸣器
+                gpio_set_level(BEEP_NAME, 0x0);
+                ips200_show_string(10 , 32 , "ON ");
+            }
+            else
+            {
+                // 关闭蜂鸣器
+                gpio_set_level(BEEP_NAME, 0x1);
+                ips200_show_string(10 , 32 , "OFF");
+            }
+        }
+        else if (Key_Check(KEY_BACK,KEY_SINGLE))
+        {
+            // 返回上一级界面
+            return 0;   
+        }
+    }
+
+}
+ 
 
 /*******************************************************************************************************************/
 /*--------------------------------------------------------------------------------------------------[E] 交互界面 [E]*/
