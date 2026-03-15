@@ -33,6 +33,9 @@
 
 #include "zf_common_headfile.h"
 
+//中断引用
+timer_fd *pit_timer;
+
 #define KEY_0       "/dev/zf_driver_gpio_key_0"
 #define KEY_1       "/dev/zf_driver_gpio_key_1"
 #define KEY_2       "/dev/zf_driver_gpio_key_2"
@@ -42,32 +45,48 @@
 
 uint32_t i = 0;
 
+//中断函数，每次中断触发时会执行该函数，把你要放在中断里的代码放在这里面
+void pit_callback()
+{
+    printf("pit_callback\r\n");
+}
+
+//中断退出提示
+void sigint_handler(int signum) 
+{
+    printf("收到Ctrl+C，程序即将退出\n");
+    exit(0);
+}
+
 int main(int, char**) 
 {
     // IPS200 初始化
     ips200_init("/dev/fb0");
     ips200_clear();  // 清屏为默认背景色（白色）
-//    ips200_full(RGB565_BLACK);    // 填充黑色
 
-    ips200_show_string(0, 0, "Hello IPS200");  // 在(0,0)显示字符串
-    ips200_show_string(0,16, "Key0:");
-    ips200_show_string(0,32, "Key1:");
-    ips200_show_string(0,48, "Key2:");
-    ips200_show_string(0,64, "Key3:");
-    ips200_show_string(0,80, "Switch0:");
-    ips200_show_string(0,96, "Switch1:");
+    ips200_show_string(0, 0, "imu963_gyro      imu963_acc");  
+
+    // 获取 IMU 设备信息
+    imu_get_dev_info();  
+
+    // 创建一个定时器1ms周期，回调函数为pit_callback
+    pit_timer = new timer_fd(1, pit_callback);
+    pit_timer->start();
 
     while(1)
     {
-        i ++;
-        ips200_show_int(40, 16, gpio_get_level(KEY_0), 1);
-        ips200_show_int(40, 32, gpio_get_level(KEY_1), 1);
-        ips200_show_int(40, 48, gpio_get_level(KEY_2), 1);
-        ips200_show_int(40, 64, gpio_get_level(KEY_3), 1);
-        ips200_show_int(64, 80, gpio_get_level(SWITCH_0), 1);
-        ips200_show_int(64, 96, gpio_get_level(SWITCH_1), 1);
-        ips200_show_int(0, 112, i, 8);
+        // 读取 IMU 原始值（每次循环更新）
+        imu963ra_get_gyro();
+        imu963ra_get_acc();
 
+        // ips200_show_int(0,16,imu963ra_gyro_x,5);
+        // ips200_show_int(0,32,imu963ra_gyro_y,5);
+        // ips200_show_int(0,48,imu963ra_gyro_z,5);
+
+        // ips200_show_int(70,16,imu963ra_acc_x,5);
+        // ips200_show_int(70,32,imu963ra_acc_y,5);
+        // ips200_show_int(70,48,imu963ra_acc_z,5);
+        
         system_delay_ms(100);
     }
 }
