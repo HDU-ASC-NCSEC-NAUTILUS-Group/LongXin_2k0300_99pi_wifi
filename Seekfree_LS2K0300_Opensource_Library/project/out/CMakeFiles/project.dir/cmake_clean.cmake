@@ -39,6 +39,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/project.dir/home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/libraries/zf_driver/zf_driver_tcp_client.cpp.o.d"
   "CMakeFiles/project.dir/home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/libraries/zf_driver/zf_driver_udp.cpp.o"
   "CMakeFiles/project.dir/home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/libraries/zf_driver/zf_driver_udp.cpp.o.d"
+  "CMakeFiles/project.dir/home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Menu.cpp.o"
+  "CMakeFiles/project.dir/home/longxin/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/Menu.cpp.o.d"
   "CMakeFiles/project.dir/main.cpp.o"
   "CMakeFiles/project.dir/main.cpp.o.d"
   "project"

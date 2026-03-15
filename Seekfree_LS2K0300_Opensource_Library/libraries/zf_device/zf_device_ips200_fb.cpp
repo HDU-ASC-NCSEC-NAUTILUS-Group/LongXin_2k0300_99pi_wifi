@@ -1,6 +1,8 @@
 #include "zf_device_ips200_fb.h"
 #include "zf_common_font.h"
 #include "zf_common_function.h"
+#include <stdarg.h>
+#include <stdio.h>
 
 static uint16 ips200_pencolor = IPS200_DEFAULT_PENCOLOR;
 static uint16 ips200_bgcolor = IPS200_DEFAULT_BGCOLOR;
@@ -301,4 +303,24 @@ void ips200_init(const char *path)
         }
     }
 
+}
+
+//-------------------------------------------------------------------------------------------------------------------
+// 函数简介     IPS200 使用 printf 函数打印格式化字符串
+// 参数说明     x               坐标x方向的起点 参数范围 [0, ips200_x_max-1]
+// 参数说明     y               坐标y方向的起点 参数范围 [0, ips200_y_max-1]
+// 参数说明     format          指定要显示的格式化字符串，范围：ASCII码可见字符组成的字符串
+// 参数说明     ...             格式化字符串参数列表
+// 返回参数     void
+// 使用示例     ips200_Printf(0, 0, "Value: %d\n", 123);
+// 备注信息     支持标准的 printf 格式化字符串语法
+//-------------------------------------------------------------------------------------------------------------------
+void ips200_Printf(uint16 x, uint16 y, const char *format, ...)
+{
+    char String[256];
+    va_list arg;
+    va_start(arg, format);
+    vsprintf(String, format, arg);
+    va_end(arg);
+    ips200_show_string(x, y, String);
 }

@@ -32,42 +32,16 @@
 ********************************************************************************************************************/
 
 #include "zf_common_headfile.h"
-
-#define KEY_0       "/dev/zf_driver_gpio_key_0"
-#define KEY_1       "/dev/zf_driver_gpio_key_1"
-#define KEY_2       "/dev/zf_driver_gpio_key_2"
-#define KEY_3       "/dev/zf_driver_gpio_key_3"
-#define SWITCH_0    "/dev/zf_driver_gpio_switch_0"
-#define SWITCH_1    "/dev/zf_driver_gpio_switch_1"
-
-uint32_t i = 0;
+#include "defines.h"
+#include "Menu.h"
 
 int main(int, char**) 
 {
-    // IPS200 初始化
-    ips200_init("/dev/fb0");
-    ips200_clear();  // 清屏为默认背景色（白色）
-//    ips200_full(RGB565_BLACK);    // 填充黑色
-
-    ips200_show_string(0, 0, "Hello IPS200");  // 在(0,0)显示字符串
-    ips200_show_string(0,16, "Key0:");
-    ips200_show_string(0,32, "Key1:");
-    ips200_show_string(0,48, "Key2:");
-    ips200_show_string(0,64, "Key3:");
-    ips200_show_string(0,80, "Switch0:");
-    ips200_show_string(0,96, "Switch1:");
+    // 外设初始化
+    Peripheral_Init();
 
     while(1)
     {
-        i ++;
-        ips200_show_int(40, 16, gpio_get_level(KEY_0), 1);
-        ips200_show_int(40, 32, gpio_get_level(KEY_1), 1);
-        ips200_show_int(40, 48, gpio_get_level(KEY_2), 1);
-        ips200_show_int(40, 64, gpio_get_level(KEY_3), 1);
-        ips200_show_int(64, 80, gpio_get_level(SWITCH_0), 1);
-        ips200_show_int(64, 96, gpio_get_level(SWITCH_1), 1);
-        ips200_show_int(0, 112, i, 8);
-
-        system_delay_ms(100);
+        Menu_Show();
     }
 }
