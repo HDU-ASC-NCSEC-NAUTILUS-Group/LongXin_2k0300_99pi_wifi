@@ -30,8 +30,8 @@ void Menu_UI(uint8_t Page)
 		// 第一页
 		case 1:
 		{
-            ips200_show_string(0  ,0  , "Menu");
-            ips200_show_string(0  ,16 , "=====================");
+            ips200_show_string(8  ,0  , "Menu");
+            ips200_show_string(0  ,16 , "==============================");
             ips200_show_string(10 ,32 , "Debug");
 
 			break;
@@ -90,8 +90,10 @@ void Menu_Show(void)
         if (menu_flag_temp == 1)
         {
             ips200_clear();
+            Debug_Page_Menu();
 
             // 从Debug界面返回，显示主菜单界面
+            ips200_clear();
             Menu_UI(1);
             ips200_show_string(0  ,32 , ">");
         }

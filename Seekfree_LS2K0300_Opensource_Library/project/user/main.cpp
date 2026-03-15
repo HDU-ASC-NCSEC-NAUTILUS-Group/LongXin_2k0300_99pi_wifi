@@ -42,6 +42,6 @@ int main(int, char**)
 
     while(1)
     {
-//        Menu_Show();
+        Menu_Show();
     }
 }

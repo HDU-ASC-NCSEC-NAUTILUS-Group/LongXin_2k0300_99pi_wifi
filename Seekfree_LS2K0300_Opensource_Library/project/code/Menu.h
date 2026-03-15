@@ -3,5 +3,7 @@
 
 // 外设初始化
 void Peripheral_Init(void);
+// 菜单调用
+void Menu_Show(void);
 
 #endif

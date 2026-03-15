@@ -14,8 +14,8 @@ void Debug_Page_Menu_UI(uint8_t Page)
 	{
 		// 第一页
 		case 1:
-			ips200_show_string(0  , 0  , "Debug");
-			ips200_show_string(0  , 16 , "=====================");
+			ips200_show_string(8  , 0  , "Debug");
+			ips200_show_string(0  , 16 , "==============================");
 			ips200_show_string(10 , 32 , "???");
 		
 			break;
@@ -85,6 +85,7 @@ int Debug_Page_Menu(void)
                     break;
             }
        }
+    }
 }
 
 /*******************************************************************************************************************/
