@@ -18,6 +18,7 @@ void Debug_Page_Menu_UI(uint8_t Page)
 			ips200_show_string(8  , 0  , "[Debug]");
 			ips200_show_string(0  , 16 , "==============================");
 			ips200_show_string(10 , 32 , "BUZ");
+            ips200_show_string(10 , 48 , "PWM+ENCODER");
 		
 			break;
 	}
