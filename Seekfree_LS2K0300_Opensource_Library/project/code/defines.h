@@ -18,11 +18,7 @@
 // 蜂鸣器宏定义
 #define BEEP_DEFINE         "/dev/zf_driver_gpio_beep"  
 
-// 电机相关定义
-#define MOTOR1_DEFINE_DIR   "/dev/zf_driver_gpio_motor_1"
-#define MOTOR2_DEFINE_DIR   "/dev/zf_driver_gpio_motor_2"
-#define MOTOR1_DEFINE_PWM   "/dev/zf_device_pwm_motor_1"
-#define MOTOR2_DEFINE_PWM   "/dev/zf_device_pwm_motor_2"
+
 
 
 #endif
