@@ -19,6 +19,4 @@
 #define BEEP_DEFINE         "/dev/zf_driver_gpio_beep"  
 
 
-
-
 #endif

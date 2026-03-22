@@ -1,7 +1,9 @@
 
 #include "zf_common_headfile.h"
+
 #include "defines.h"
 #include "Motor.h"
+
 
 struct pwm_info motor_1_pwm_info;
 struct pwm_info motor_2_pwm_info;
@@ -19,13 +21,15 @@ void Motor_Init(void)
 // 函数简介     设置电机速度
 // 使用示例     Motor_Set(1, 500);
 // 参数说明     num：指定电机编号，范围：1-4
+// #1 [][][] 3#
+// #1 [][][] 3#
+//    [][][]
+//    [][][]
+// #2 [][][] 4#
+// #2 [][][] 4#
 // 参数说明     duty：指定对应电机侧占空比，范围：-10000-10000（注：duty本意是没有负数的）
 // 备注信息     左侧电机共用PWM1，右侧电机共用PWM2
 //-------------------------------------------------------------------------------------------------------------------
-//#
-//#
-//#
-
 
 void Motor_Set(int num, int duty)
 {

@@ -10,10 +10,14 @@
 // PWM
 #define MOTOR1_PWM              "/dev/zf_device_pwm_motor_1"
 #define MOTOR2_PWM              "/dev/zf_device_pwm_motor_2"
+
+extern struct pwm_info motor_1_pwm_info;
+extern struct pwm_info motor_2_pwm_info;
 // 在设备树中，设置的10000。如果要修改，需要与设备树对应。
 #define MOTOR1_PWM_DUTY_MAX     (motor_1_pwm_info.duty_max)        
 #define MOTOR2_PWM_DUTY_MAX     (motor_2_pwm_info.duty_max)  
 
+void    Motor_Init              (void);
 void    Motor_Set               (int num, int speed);
 void    Motor_Reset_ALL         (void);
 

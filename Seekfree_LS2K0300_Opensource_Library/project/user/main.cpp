@@ -32,10 +32,14 @@
 ********************************************************************************************************************/
 
 #include "zf_common_headfile.h"
+
 #include "defines.h"
 #include "Menu.h"
 #include "Key.h"
+#include "Motor.h"
 
+
+timer_fd *pit_timer;
 
 // 清场函数（保护性措施）
 void cleanup()
@@ -43,8 +47,7 @@ void cleanup()
     // 需要先停止定时器线程，后面才能稳定关闭电机，电调，舵机等
     pit_timer->stop();
     printf("程序异常退出，执行清理操作\n");
-
-
+    Motor_Reset_ALL();
 }
 // 宣告程序退出函数
 void sigint_handler(int signum) 
