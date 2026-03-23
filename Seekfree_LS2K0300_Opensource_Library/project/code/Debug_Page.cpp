@@ -131,7 +131,6 @@ int Debug_Page_Menu(void)
                     Debug_Page_Menu_UI(1);
                     ips200_show_string(0  ,32 , ">");
 
-                    break;
                 case 2:
                     ips200_clear();
                     Debug_Page_Menu_UI(1);
@@ -213,6 +212,8 @@ int Debug_MOTOR(void)
     // #2 [][][] 4#
     // #2 [][][] 4#
 
+    // PWM共用：1和4，2和3
+
     while(1)
     {
         // 上/下按键是否被按下过
@@ -257,23 +258,23 @@ int Debug_MOTOR(void)
             /* 按键处理*/       
             if (Key_Check(KEY_NAME_UP,KEY_SINGLE)) 
             {
+                key_pressed = 2;
                 DUTY[Debug_MOTOR_flag_temp - 1] += 5;
                 if (DUTY[Debug_MOTOR_flag_temp - 1] >  100)
                 {
                     DUTY[Debug_MOTOR_flag_temp - 1] =  100;
                 }
-                Motor_Set(Debug_MOTOR_flag_temp, DUTY[Debug_MOTOR_flag_temp - 1]);                        
-                ips200_Printf(50 ,16 + Debug_MOTOR_flag_temp * 16, "%d    ", DUTY[Debug_MOTOR_flag_temp - 1]);   
+                Motor_Set(Debug_MOTOR_flag_temp, DUTY[Debug_MOTOR_flag_temp - 1]);                         
             }
             else if (Key_Check(KEY_NAME_DOWN,KEY_SINGLE)) 
             {
+                key_pressed = 2;
                 DUTY[Debug_MOTOR_flag_temp - 1] -= 5;
                 if (DUTY[Debug_MOTOR_flag_temp - 1] < -100)
                 {
                     DUTY[Debug_MOTOR_flag_temp - 1] = -100;
                 }
                 Motor_Set(Debug_MOTOR_flag_temp, DUTY[Debug_MOTOR_flag_temp - 1]);
-                ips200_Printf(50 ,16 + Debug_MOTOR_flag_temp * 16, "%d    ", DUTY[Debug_MOTOR_flag_temp - 1]);  
             }
             else if ((Key_Check(KEY_NAME_CONFIRM,KEY_SINGLE)) || (Key_Check(KEY_NAME_BACK,KEY_SINGLE)))
             {
@@ -283,8 +284,25 @@ int Debug_MOTOR(void)
         }
 
 
+        /* PWM共用的显示处理*/
+        if (key_pressed == 2)
+        {
+            switch (Debug_MOTOR_flag_temp)
+            {
+                case 1:DUTY[3] = DUTY[0];break;
+                case 2:DUTY[2] = DUTY[1];break;
+                case 3:DUTY[1] = DUTY[2];break;
+                case 4:DUTY[0] = DUTY[3];break;
+            }
+            ips200_Printf(50 ,32 , "%d    ", DUTY[0]); 
+            ips200_Printf(50 ,48 , "%d    ", DUTY[1]); 
+            ips200_Printf(50 ,64 , "%d    ", DUTY[2]); 
+            ips200_Printf(50 ,80 , "%d    ", DUTY[3]); 
+        }
+
+
         /* 显示更新*/
-        if (key_pressed)
+        if (key_pressed == 1)
         {
             // 清除光标，暂时用这个方法
             ips200_show_string(0  ,32 , " ");

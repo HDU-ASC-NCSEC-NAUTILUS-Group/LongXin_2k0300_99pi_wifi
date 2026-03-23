@@ -27,6 +27,7 @@ void Motor_Init(void)
 //    [][][]
 // #2 [][][] 4#
 // #2 [][][] 4#
+ // PWM共用：1和4，2和3
 // 参数说明     duty：指定对应电机侧占空比，范围：-10000-10000（注：duty本意是没有负数的）
 // 备注信息     左侧电机共用PWM1，右侧电机共用PWM2
 //-------------------------------------------------------------------------------------------------------------------
@@ -44,7 +45,7 @@ void Motor_Set(int num, int duty)
                 break;
             case 2:
                 gpio_set_level(MOTOR2_DIR, 1);                                      // DIR输出高电平
-                pwm_set_duty(MOTOR1_PWM, duty * (MOTOR1_PWM_DUTY_MAX / 100));       // 计算占空比
+                pwm_set_duty(MOTOR2_PWM, duty * (MOTOR1_PWM_DUTY_MAX / 100));       // 计算占空比
                 break;
             case 3:
                 gpio_set_level(MOTOR3_DIR, 1);                                      // DIR输出高电平
@@ -52,7 +53,7 @@ void Motor_Set(int num, int duty)
                 break;
             case 4:
                 gpio_set_level(MOTOR4_DIR, 1);                                      // DIR输出高电平
-                pwm_set_duty(MOTOR2_PWM, duty * (MOTOR2_PWM_DUTY_MAX / 100));       // 计算占空比
+                pwm_set_duty(MOTOR1_PWM, duty * (MOTOR2_PWM_DUTY_MAX / 100));       // 计算占空比
                 break;
             default:
                 // 留一手，防止其他电机编号错误导致的错误
@@ -71,7 +72,7 @@ void Motor_Set(int num, int duty)
                 break;
             case 2:
                 gpio_set_level(MOTOR2_DIR, 0);                                      // DIR输出低电平
-                pwm_set_duty(MOTOR1_PWM, -duty * (MOTOR1_PWM_DUTY_MAX / 100));      // 计算占空比
+                pwm_set_duty(MOTOR2_PWM, -duty * (MOTOR1_PWM_DUTY_MAX / 100));      // 计算占空比
                 break;
             case 3:
                 gpio_set_level(MOTOR3_DIR, 0);                                      // DIR输出低电平
@@ -79,7 +80,7 @@ void Motor_Set(int num, int duty)
                 break;
             case 4:
                 gpio_set_level(MOTOR4_DIR, 0);                                      // DIR输出低电平
-                pwm_set_duty(MOTOR2_PWM, -duty * (MOTOR2_PWM_DUTY_MAX / 100));      // 计算占空比
+                pwm_set_duty(MOTOR1_PWM, -duty * (MOTOR2_PWM_DUTY_MAX / 100));      // 计算占空比
                 break;
             default:
                 // 留一手，防止其他电机编号错误导致的错误
