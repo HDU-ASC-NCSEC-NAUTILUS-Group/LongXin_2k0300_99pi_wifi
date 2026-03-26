@@ -21,6 +21,7 @@ void Debug_Page_Menu_UI(uint8_t Page)
 			ips200_show_string(0  , 16 , "==============================");
 			ips200_show_string(10 , 32 , "BUZ");
             ips200_show_string(10 , 48 , "MOTOR");
+            ips200_show_string(10 , 64 , "IMU963RA");
 		
 			break;
 	}
@@ -44,6 +45,13 @@ void Debug_MOTOR_UI(void)
     ips200_show_string(10 , 64 , "PWM3:#####      ENC3:###");
     ips200_show_string(10 , 80 , "PWM4:#####      ENC4:###");
 }
+
+// [三级界面]IMU963RA调试界面
+void Debug_IMU963RA_UI(void)
+{
+    ips200_show_string(8  , 0  , "[DEBUG]-IMU963RA");
+    ips200_show_string(0  , 16 , "==============================");
+}
 /*******************************************************************************************************************/
 /*--------------------------------------------------------------------------------------------------[E] 菜单样式 [E]*/
 /*******************************************************************************************************************/
@@ -54,8 +62,9 @@ void Debug_MOTOR_UI(void)
 /*******************************************************************************************************************/
 
 // 相关函数提前声明
-int Debug_BUZ       (void);
-int Debug_MOTOR       (void);
+int Debug_BUZ           (void);
+int Debug_MOTOR         (void);
+int Debug_IMU963RA      (void);
 
 // [二级界面]Debug模式界面
 int Debug_Page_Menu(void)
@@ -79,13 +88,13 @@ int Debug_Page_Menu(void)
         {
             key_pressed = 1;
             Debug_Page_flag --;
-            if (Debug_Page_flag < 1)Debug_Page_flag = 2;
+            if (Debug_Page_flag < 1)Debug_Page_flag = 3;
         }
         else if (Key_Check(KEY_NAME_DOWN,KEY_SINGLE))
         {
             key_pressed = 1;
             Debug_Page_flag ++;
-            if (Debug_Page_flag > 2)Debug_Page_flag = 1;
+            if (Debug_Page_flag > 3)Debug_Page_flag = 1;
         }
         else if (Key_Check(KEY_NAME_CONFIRM,KEY_SINGLE))
         {
@@ -119,6 +128,16 @@ int Debug_Page_Menu(void)
             Debug_Page_Menu_UI(1);
             ips200_show_string(0  ,48 , ">");
         }
+        else if (Debug_Page_flag_temp == 3)
+        {
+            ips200_clear();
+            Debug_IMU963RA();
+            
+            // 从子界面返回后
+            ips200_clear();
+            Debug_Page_Menu_UI(1);
+            ips200_show_string(0  ,64 , ">");
+        }
         
 
         /* 显示更新*/
@@ -136,6 +155,12 @@ int Debug_Page_Menu(void)
                     ips200_clear();
                     Debug_Page_Menu_UI(1);
                     ips200_show_string(0  ,48 , ">");
+
+                    break;
+                case 3:
+                    ips200_clear();
+                    Debug_Page_Menu_UI(1);
+                    ips200_show_string(0  ,64 , ">");
 
                     break;
             }
@@ -315,6 +340,38 @@ int Debug_MOTOR(void)
     }
 }
 
+// #####  #   #  #   #  #####  #####  #####  ####    ###   
+//   #    ## ##  #   #  #   #  #          #  #   #  #   #  
+//   #    # # #  #   #  #####  #####  #####  ####   #####  
+//   #    #   #  #   #      #  #   #      #  #  #   #   #  
+// #####  #   #   ###   #####  #####  #####  #   #  #   #  
+//
+// [三级界面]陀螺仪IMU963RA调试
+int Debug_IMU963RA(void)
+{
+    Debug_IMU963RA_UI();
+    
+    while(1)
+    {
+        /* 按键处理*/       
+//            if (Key_Check(KEY_NAME_UP,KEY_SINGLE)) 
+//            {
+//            }
+//            else if (Key_Check(KEY_NAME_DOWN,KEY_SINGLE)) 
+//            {
+//            }
+//            else 
+            if (Key_Check(KEY_NAME_CONFIRM,KEY_SINGLE))
+            {
+
+            }
+            else if (Key_Check(KEY_NAME_BACK,KEY_SINGLE))
+            {
+                // 返回上一级界面
+                return 0;   
+            }
+    }
+}
 /*******************************************************************************************************************/
 /*--------------------------------------------------------------------------------------------------[E] 交互界面 [E]*/
 /*******************************************************************************************************************/
