@@ -1,8 +1,9 @@
 
 #include "zf_common_headfile.h"
+
 #include "defines.h"
 #include "Key.h"
-
+#include "Motor.h"
 #include "Debug_Page.h"
 
 
@@ -17,6 +18,9 @@ void Peripheral_Init(void)
     ips200_init("/dev/fb0");
     ips200_clear();  // 清屏为默认背景色（白色）
 //    ips200_full(RGB565_BLACK);    // 填充黑色 
+
+    // 电机初始化调用
+    Motor_Init();
 }
 
 /*******************************************************************************************************************/

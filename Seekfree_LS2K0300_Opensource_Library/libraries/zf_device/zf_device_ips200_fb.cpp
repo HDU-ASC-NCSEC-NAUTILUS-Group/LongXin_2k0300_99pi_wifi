@@ -45,6 +45,9 @@ void ips200_full(const uint16 color)
 
 void ips200_draw_point(uint16_t x, uint16_t y, const uint16_t color)
 {
+    if (screen_base == NULL) {
+        return; // 屏幕未初始化，直接返回
+    }
     screen_base[y * ips200_width + x] = color;
 }
 

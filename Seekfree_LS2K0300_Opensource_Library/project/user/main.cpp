@@ -32,12 +32,39 @@
 ********************************************************************************************************************/
 
 #include "zf_common_headfile.h"
+
 #include "defines.h"
 #include "Menu.h"
 #include "Key.h"
+#include "Motor.h"
+
+
+timer_fd *pit_timer;
+
+// 清场函数（保护性措施）
+void cleanup()
+{
+    // 需要先停止定时器线程，后面才能稳定关闭电机，电调，舵机等
+    pit_timer->stop();
+    printf("程序异常退出，执行清理操作\n");
+    Motor_Reset_ALL();
+}
+// 宣告程序退出函数
+void sigint_handler(int signum) 
+{
+    printf("收到Ctrl+C，程序即将退出\n");
+    exit(0);
+}
+
 
 int main(int, char**) 
 {
+    // 注册清理函数
+    // 需要定义，作为退出整个程序时的重置函数（比如关闭电机、蜂鸣器等）
+    atexit(cleanup);
+    // 注册SIGINT信号的处理函数
+    signal(SIGINT, sigint_handler);
+
     // 外设初始化
     Peripheral_Init();
 
@@ -46,6 +73,6 @@ int main(int, char**)
 
     while(1)
     {
-//        Menu_Show();
+        //Menu_Show();
     }
 }
