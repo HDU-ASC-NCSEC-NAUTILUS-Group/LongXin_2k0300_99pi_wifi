@@ -34,6 +34,11 @@ void Motor_Init(void)
 
 void Motor_Set(int num, int duty)
 {
+    // 占空比溢出保护
+    if (duty > 100){duty = 100;}
+    else if (duty < -100){duty = -100;}
+
+
     // 速度设置为正向
     if (duty >= 0)
     {
