@@ -7,12 +7,36 @@
 #include <chrono>
 
 
+// 全局变量
+volatile float Yaw_Result = 0.0f;    // 偏航角（Yaw）
+volatile float Roll_Result = 0.0f;   // 横滚角（Roll）
+volatile float Pitch_Result = 0.0f;  // 俯仰角（Pitch）
+// IMU963RA 分析使能标志位
+volatile uint8_t IMU963RA_analysis_enable = 0;
 
 
-// 九轴数据的解算
+// 零飘校准校准需要的样本数
+#define CALIB_TARGET_SAMPLES    400  
+// 枚举定义校准状态
+typedef enum {
+    CALIB_STATE_SPARE   = 0,          // 未开始
+    CALIB_STATE_RUNNING = 1,          // 校准中
+    CALIB_STATE_DONE    = 2           // 已校准
+} CalibState_t;
+static CalibState_t calib_state = CALIB_STATE_SPARE;
+// 样本数量
+static uint16_t calib_count = 0;
+
+
+
+
+
+
+// 选择九轴数据的解算
 #if (USE_MAG == 1)
+
 //-------------------------------------------------------------------------------------------------------------------
-// 函数简介     IMU963RA 获取原始数据
+// 函数简介     IMU963RA 获取九轴原始数据
 // 使用示例     imu963ra_get_data();                                              // 执行该函数后，直接查看对应的变量即可
 // 备注信息     定时器定时中断定时调用该函数，获取 IMU963RA 原始数据
 //-------------------------------------------------------------------------------------------------------------------
@@ -30,14 +54,6 @@ void imu963ra_get_data(void)
 // 条件编译选项
 #define ENABLE_FULL_EULER    1   // 1: 计算全部欧拉角, 0: 只计算Yaw角
 
-// 全局变量
-volatile float Yaw_Result = 0.0f;    // 偏航角（Yaw）
-volatile float Roll_Result = 0.0f;   // 横滚角（Roll）
-volatile float Pitch_Result = 0.0f;  // 俯仰角（Pitch）
-
-// IMU963RA 分析使能标志位
-volatile uint8_t IMU963RA_analysis_enable = 0;
-
 // 传感器数据缩放因子
 #define GYRO_SCALE    (2000.0f / 32768.0f * M_PI / 180.0f)  // 陀螺仪刻度因子（转换为rad/s）
 #define ACC_SCALE     (8.0f / 32768.0f * 9.81f)            // 加速度计刻度因子（转换为m/s²）
@@ -48,18 +64,6 @@ volatile uint8_t IMU963RA_analysis_enable = 0;
 /*[S] 零飘校准 [S]--------------------------------------------------------------------------------------------------*/
 /*******************************************************************************************************************/
 
-// 校准需要的样本数
-#define CALIB_TARGET_SAMPLES    400  
-
-// 枚举定义动态校准状态
-typedef enum {
-    CALIB_STATE_SPARE   = 0,     				// c
-    CALIB_STATE_RUNNING = 1,   					// 校准中
-    CALIB_STATE_DONE    = 2       				// 已校准
-} CalibState_t;
-
-static CalibState_t calib_state = CALIB_STATE_SPARE;
-static uint16_t calib_count = 0;
 static int32_t sum_gx = 0, sum_gy = 0, sum_gz = 0;
 static int32_t sum_mx = 0, sum_my = 0, sum_mz = 0;
 static float gyro_off_x = 0, gyro_off_y = 0, gyro_off_z = 0;
@@ -106,6 +110,8 @@ int8_t IMU963RA_Calibration_Check(void)
     // 检查是否允许收集数据
     if(IMU963RA_analysis_enable)
     {
+        imu963ra_get_data();
+
         // 收集数据
         sum_gx += imu963ra_gyro_x;
         sum_gy += imu963ra_gyro_y;
@@ -174,19 +180,16 @@ void QuaternionToEuler(void)
 
 //-------------------------------------------------------------------------------------------------------------------
 // 函数简介     IMU963RA 姿态解算
-// 使用示例     IMU963RA_AHRS_Update();                                              // 执行姿态解算
+// 使用示例     IMU963RA_Analysis_Update();                                              // 执行姿态解算
 // 备注信息     定时调用该函数，更新姿态解算结果
 //-------------------------------------------------------------------------------------------------------------------
-void IMU963RA_AHRS_Update(void)
+void IMU963RA_Analysis_Update(void)
 {
     // 只有在校准完成后才执行姿态解算
     if (calib_state != CALIB_STATE_DONE)
     {
         return;  // 未校准完成，不执行解算
     }
-
-    // 获取原始数据
-    imu963ra_get_data();
     
     // 应用零飘校准
     float gx = (imu963ra_gyro_x - gyro_off_x) * GYRO_SCALE;
@@ -216,8 +219,7 @@ void IMU963RA_AHRS_Update(void)
 /*******************************************************************************************************************/
 /*[S] 工具函数 [S]--------------------------------------------------------------------------------------------------*/
 /*******************************************************************************************************************/
-
-void IMU963RA_Apply_Calibration(float *acc_x, float *acc_y, float *acc_z, 
+void IMU963RA_Get_Calibrated_Data(float *acc_x, float *acc_y, float *acc_z, 
                                         float *gyro_x, float *gyro_y, float *gyro_z, 
                                         float *mag_x, float *mag_y, float *mag_z)
 {
@@ -241,8 +243,11 @@ void IMU963RA_Apply_Calibration(float *acc_x, float *acc_y, float *acc_z,
     *mag_y = (float)imu963ra_mag_y - mag_off_y;
     *mag_z = (float)imu963ra_mag_z - mag_off_z;
 }   
-#endif
+/*******************************************************************************************************************/
+/*--------------------------------------------------------------------------------------------------[E] 工具函数 [E]*/
+/*******************************************************************************************************************/
 
+#endif
 
 
 
@@ -251,22 +256,119 @@ void IMU963RA_Apply_Calibration(float *acc_x, float *acc_y, float *acc_z,
 
 // 六轴数据的解算
 #if (USE_MAG == 0)
-// 传感器数据缩放因子
-#define GYRO_SCALE_6AXIS    (2000.0f / 32768.0f)  // 陀螺仪刻度因子（转换为 °/s）
 
-// 低通滤波系数（0.2 = 强滤波，0.5 = 中等，0.8 = 弱滤波）
-#define MPU6050_LOW_PASS_FILTER 0.3f
-// 输出死区系数
-#define MPU6050_OUTPUT_DEAD_ZONE 0.05f
+//-------------------------------------------------------------------------------------------------------------------
+// 函数简介     IMU963RA 获取六轴原始数据
+// 使用示例     imu963ra_get_data();                                              // 执行该函数后，直接查看对应的变量即可
+// 备注信息     定时器定时中断定时调用该函数，获取 IMU963RA 原始数据
+//-------------------------------------------------------------------------------------------------------------------
+// IMU963RA 原始数据变量
+// imu963ra_acc_x           imu963ra_acc_y          imu963ra_acc_z
+// imu963ra_gyro_x          imu963ra_gyro_y         imu963ra_gyro_z
+void imu963ra_get_data(void)
+{
+    imu963ra_get_acc();
+    imu963ra_get_gyro();
+}
 
-// 固化解算系数
-// 弧度转角度
-const float mpu6050_const_data1 = (1.0f / M_PI) * 180.0f;
-// 陀螺仪积分系数
-const float mpu6050_const_data2 = (1.0f / 32768.0f) * 2000.0f;
+/*******************************************************************************************************************/
+/*[S] 零飘校准 [S]--------------------------------------------------------------------------------------------------*/
+/*******************************************************************************************************************/
+// 上次时间戳
+static std::chrono::steady_clock::time_point last_time = std::chrono::steady_clock::now();
+
+// 获取实际采样时间间隔
+static float Get_Real_dt(void)
+{
+    auto current_time = std::chrono::steady_clock::now();
+    auto time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_time).count();
+    
+    // 限制dt范围
+    float dt = (float)time_diff / 1000.0f;
+    if (dt > 0.05f) dt = 0.05f;
+    if (dt < 0.001f) dt = 0.001f;
+    
+    last_time = current_time;
+    return dt;
+}
+
+// 零飘校准相关
+static int32_t sum_gx = 0, sum_gy = 0, sum_gz = 0;
+static float gyro_off_x = 0, gyro_off_y = 0, gyro_off_z = 0;
+
+// 开始校准
+void IMU963RA_Calibration_Start(void)
+{
+    calib_state = CALIB_STATE_RUNNING;
+    calib_count = 0;
+    sum_gx = 0;
+    sum_gy = 0;
+    sum_gz = 0;
+}
+
+// 校准状态检查
+int8_t IMU963RA_Calibration_Check(void)
+{
+    if(calib_state == CALIB_STATE_DONE)
+    {
+        return 2;
+    }
+
+    if(calib_state == CALIB_STATE_SPARE)
+    {
+        return 0;
+    }
+    
+    // 检查是否允许收集数据
+    if(IMU963RA_analysis_enable)
+    {
+        imu963ra_get_data();
+        // 收集数据
+        sum_gx += imu963ra_gyro_x;
+        sum_gy += imu963ra_gyro_y;
+        sum_gz += imu963ra_gyro_z;
+        calib_count++;
+
+        IMU963RA_analysis_enable = 0;
+        
+        if(calib_count >= CALIB_TARGET_SAMPLES)
+        {
+            gyro_off_x = (float)sum_gx / CALIB_TARGET_SAMPLES;
+            gyro_off_y = (float)sum_gy / CALIB_TARGET_SAMPLES;
+            gyro_off_z = (float)sum_gz / CALIB_TARGET_SAMPLES;
+            
+            calib_state = CALIB_STATE_DONE;
+        }
+    }
+    
+    return 1;
+}
+/*******************************************************************************************************************/
+/*--------------------------------------------------------------------------------------------------[E] 零飘校准 [E]*/
+/*******************************************************************************************************************/
+
+
+/*******************************************************************************************************************/
+/*[S] 卡尔曼滤波 [S]------------------------------------------------------------------------------------------------*/
+/*******************************************************************************************************************/
 
 // 卡尔曼滤波开关：1=使用卡尔曼滤波，0=使用互补滤波
 #define USE_KALMAN_FILTER 1
+
+//Q_angle（角度过程噪声）
+//数值越大，越信任陀螺仪（动态响应快，但噪声大）；
+//数值越小，越信任加速度计（静态准，但动态延迟大）；
+//平衡车推荐初始值：0.001f~0.005f
+
+//Q_bias（陀螺仪零飘过程噪声）
+//数值越大，对零飘的动态补偿越灵敏，但容易引入抖动；
+//数值越小，零飘补偿越平滑，但响应慢；
+//平衡车推荐初始值：0.003f~0.01f
+
+//R_measure（加速度计测量噪声）
+//数值越大，越不信任加速度计（抗振动干扰能力强，但静态误差大）；
+//数值越小，越信任加速度计（静态准，但易受动态加速度干扰）；
+//平衡车推荐初始值：0.03f~0.1f
 
 // 卡尔曼滤波结构体定义
 typedef struct {
@@ -354,11 +456,14 @@ static float Get_Dynamic_Rmeasure(float ax, float ay, float az)
         return 0.3f;   // 动态R值
     }
 }
+/*******************************************************************************************************************/
+/*------------------------------------------------------------------------------------------------[E] 卡尔曼滤波 [E]*/
+/*******************************************************************************************************************/
 
-// 全局变量
-volatile float Yaw_Result = 0.0f;    // 偏航角（Yaw）
-volatile float Roll_Result = 0.0f;   // 横滚角（Roll）
-volatile float Pitch_Result = 0.0f;  // 俯仰角（Pitch）
+
+/*******************************************************************************************************************/
+/*[S] 姿态解算+滤波 [S]----------------------------------------------------------------------------------------------*/
+/*******************************************************************************************************************/
 
 // 中间变量
 static float RollAcc = 0.0f;         // 加速度计计算的横滚角
@@ -373,92 +478,19 @@ static float Roll_Temp = 0.0f;        // 横滚角 中间处理值
 static float Yaw_Temp = 0.0f;         // 偏航角 中间处理值
 static float Pitch_Temp = 0.0f;       // 俯仰角 中间处理值
 
-// 上次时间戳
-static std::chrono::steady_clock::time_point last_time = std::chrono::steady_clock::now();
+// 低通滤波系数（0.2 = 强滤波，0.5 = 中等，0.8 = 弱滤波）
+#define MPU6050_LOW_PASS_FILTER 0.3f
+// 输出死区系数
+#define MPU6050_OUTPUT_DEAD_ZONE 0.05f
 
-// 获取实际采样时间间隔
-static float Get_Real_dt(void)
-{
-    auto current_time = std::chrono::steady_clock::now();
-    auto time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_time).count();
-    
-    // 限制dt范围
-    float dt = (float)time_diff / 1000.0f;
-    if (dt > 0.05f) dt = 0.05f;
-    if (dt < 0.001f) dt = 0.001f;
-    
-    last_time = current_time;
-    return dt;
-}
-
-// IMU963RA 分析使能标志位
-volatile uint8_t IMU963RA_analysis_enable = 0;
-
-// 零飘校准相关
-// 校准需要的样本数
-#define CALIB_TARGET_SAMPLES    400  
-
-// 枚举定义动态校准状态
-typedef enum {
-    CALIB_STATE_SPARE   = 0,          // 未开始
-    CALIB_STATE_RUNNING = 1,          // 校准中
-    CALIB_STATE_DONE    = 2           // 已校准
-} CalibState_t;
-
-static CalibState_t calib_state = CALIB_STATE_SPARE;
-static uint16_t calib_count = 0;
-static int32_t sum_gx = 0, sum_gy = 0, sum_gz = 0;
-static float gyro_off_x = 0, gyro_off_y = 0, gyro_off_z = 0;
-
-// 开始校准
-void IMU963RA_Calibration_Start(void)
-{
-    calib_state = CALIB_STATE_RUNNING;
-    calib_count = 0;
-    sum_gx = 0;
-    sum_gy = 0;
-    sum_gz = 0;
-}
-
-// 校准状态检查
-int8_t IMU963RA_Calibration_Check(void)
-{
-    if(calib_state == CALIB_STATE_DONE)
-    {
-        return 2;
-    }
-
-    if(calib_state == CALIB_STATE_SPARE)
-    {
-        return 0;
-    }
-    
-    // 检查是否允许收集数据
-    if(IMU963RA_analysis_enable)
-    {
-        // 收集数据
-        sum_gx += imu963ra_gyro_x;
-        sum_gy += imu963ra_gyro_y;
-        sum_gz += imu963ra_gyro_z;
-        calib_count++;
-
-        IMU963RA_analysis_enable = 0;
-        
-        if(calib_count >= CALIB_TARGET_SAMPLES)
-        {
-            gyro_off_x = (float)sum_gx / CALIB_TARGET_SAMPLES;
-            gyro_off_y = (float)sum_gy / CALIB_TARGET_SAMPLES;
-            gyro_off_z = (float)sum_gz / CALIB_TARGET_SAMPLES;
-            
-            calib_state = CALIB_STATE_DONE;
-        }
-    }
-    
-    return 1;
-}
+// 固化解算系数
+// 弧度转角度
+const float mpu6050_const_data1 = (1.0f / M_PI) * 180.0f;
+// 陀螺仪积分系数
+const float mpu6050_const_data2 = (1.0f / 32768.0f) * 2000.0f;
 
 // IMU963RA 姿态解算
-void IMU963RA_AHRS_Update(void)
+void IMU963RA_Analysis_Update(void)
 {
     // 只有在校准完成后才执行姿态解算
     if (calib_state != CALIB_STATE_DONE)
@@ -476,10 +508,6 @@ void IMU963RA_AHRS_Update(void)
         kalman_init_flag = 1;
     }
     
-    // 获取原始数据
-    imu963ra_get_acc();
-    imu963ra_get_gyro();
-    
     // 尝试使用校准的系数修正原始数据
     if(calib_state == CALIB_STATE_DONE)
     {
@@ -487,6 +515,13 @@ void IMU963RA_AHRS_Update(void)
         imu963ra_gyro_y -= gyro_off_y;
         imu963ra_gyro_z -= gyro_off_z;
     }
+    else 
+	// 使用固定值修正原始数据
+	{
+		mpu6050_gyro_x += 0.0f;
+		mpu6050_gyro_y += 0.0f;
+		mpu6050_gyro_z -= 0.0f;
+	}
     
     // 输入死区
     if(-4 < imu963ra_gyro_x && imu963ra_gyro_x < 4) { imu963ra_gyro_x = 0; }
@@ -494,8 +529,8 @@ void IMU963RA_AHRS_Update(void)
     if(-4 < imu963ra_gyro_z && imu963ra_gyro_z < 4) { imu963ra_gyro_z = 0; }
     
     // 计算陀螺仪角速度（转换为 °/s）
-    float gyro_roll_rate  = (float)imu963ra_gyro_x * GYRO_SCALE_6AXIS;
-    float gyro_pitch_rate = (float)imu963ra_gyro_y * GYRO_SCALE_6AXIS;
+    float gyro_roll_rate  = (float)imu963ra_gyro_x * mpu6050_const_data2;
+    float gyro_pitch_rate = (float)imu963ra_gyro_y * mpu6050_const_data2;
     
     // 横滚角加速度计计算
     RollAcc   = atan2f((float)imu963ra_acc_y, (float)imu963ra_acc_z) * mpu6050_const_data1;
@@ -504,7 +539,7 @@ void IMU963RA_AHRS_Update(void)
     
     float dt = Get_Real_dt();
     
-    #if USE_KALMAN_FILTER
+#if USE_KALMAN_FILTER
     // 卡尔曼滤波模式（Roll/Pitch轴）
     // 动态调整R_measure（根据加速度计状态）
     kf_roll.R_measure  = Get_Dynamic_Rmeasure(imu963ra_acc_x, imu963ra_acc_y, imu963ra_acc_z);
@@ -513,14 +548,14 @@ void IMU963RA_AHRS_Update(void)
     // 卡尔曼滤波计算
     Roll  = Kalman_Calculate(&kf_roll, RollAcc, gyro_roll_rate, dt);
     Pitch = Kalman_Calculate(&kf_pitch, PitchAcc, gyro_pitch_rate, dt);
-    #else
+#else
     // 互补滤波模式
     RollGyro  = Roll + (float)imu963ra_gyro_x * GYRO_SCALE_6AXIS * dt;
     Roll      = 0.005 * RollAcc + (1 - 0.005) * RollGyro;
     
     PitchGyro = Pitch + (float)imu963ra_gyro_y * GYRO_SCALE_6AXIS * dt;
     Pitch     = 0.005 * PitchAcc + (1 - 0.005) * PitchGyro;
-    #endif
+#endif
     
     // 偏航角计算：仅陀螺仪积分（无加速度计校准，会漂移）
     Yaw       += (float)imu963ra_gyro_z * GYRO_SCALE_6AXIS * dt * 1.014f;
@@ -535,7 +570,14 @@ void IMU963RA_AHRS_Update(void)
     if (fabs(Yaw_Result - Yaw_Temp) > MPU6050_OUTPUT_DEAD_ZONE) { Yaw_Result = Yaw_Temp; }
     if (fabs(Pitch_Result - Pitch_Temp) > MPU6050_OUTPUT_DEAD_ZONE) { Pitch_Result = Pitch_Temp; }
 }
+/*******************************************************************************************************************/
+/*----------------------------------------------------------------------------------------------[E] 姿态解算+滤波 [E]*/
+/*******************************************************************************************************************/
 
+
+/*******************************************************************************************************************/
+/*[S] 工具函数 [S]--------------------------------------------------------------------------------------------------*/
+/*******************************************************************************************************************/
 // 清零Yaw角
 void IMU963RA_Reset_Yaw(void)
 {
@@ -543,5 +585,8 @@ void IMU963RA_Reset_Yaw(void)
     Yaw_Temp = 0.0f;
     Yaw_Result = 0.0f;
 }
+/*******************************************************************************************************************/
+/*--------------------------------------------------------------------------------------------------[E] 工具函数 [E]*/
+/*******************************************************************************************************************/
 
 #endif

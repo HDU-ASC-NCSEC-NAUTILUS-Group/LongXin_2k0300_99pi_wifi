@@ -433,7 +433,8 @@ int Debug_IMU963RA(void)
 
             if (IMU963RA_analysis_enable)
             {
-                IMU963RA_AHRS_Update();
+                imu963ra_get_data();
+                IMU963RA_Analysis_Update();
                 IMU963RA_analysis_enable = 0;
 //                IMU963RA_Apply_Calibration(&ax, &ay, &az, &gx, &gy, &gz, &mx, &my, &mz);
             }
