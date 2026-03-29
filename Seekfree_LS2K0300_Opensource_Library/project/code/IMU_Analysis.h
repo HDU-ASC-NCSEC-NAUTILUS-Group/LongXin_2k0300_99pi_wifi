@@ -5,7 +5,7 @@
 #define __IMU_ANALYSIS_H__
 
 // 是否启用磁力计
-#define IMU_ANALYSIS_USE_MAG 1
+#define IMU_ANALYSIS_USE_MAG 0
 
 // 全局变量声明
 extern volatile float Yaw_Result;    // 偏航角（Yaw）
@@ -16,7 +16,7 @@ extern volatile float Pitch_Result;  // 俯仰角（Pitch）
 extern volatile uint8_t IMU963RA_analysis_enable;
 
 // 函数声明
-void    IMU963RA_Init_Scale              (void);
+
 void    imu963ra_update_data            (void);
 void    IMU963RA_Calibration_Start      (void);
 int8_t  IMU963RA_Calibration_Check      (void);

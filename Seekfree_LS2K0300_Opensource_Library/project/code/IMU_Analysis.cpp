@@ -41,33 +41,11 @@ volatile uint8_t IMU963RA_analysis_enable = 0;
 // 3: 顺时针旋转 270 度
 #define IMU_MAG_AXIS_ROTATE  3
 
-// IIO子系统读取的scale值（如果没有scale文件，则使用硬编码的IMU963RA参数）
-static float imu_acc_scale = 0.0f;      // 加速度计scale (m/s² per LSB)
-static float imu_gyro_scale = 0.0f;     // 陀螺仪scale (rad/s per LSB)
-static float imu_mag_scale = 0.0f;      // 磁力计scale (uT per LSB)
+// 硬编码的IMU963RA参数
+// 陀螺仪：±2000°/s, 16-bit
+static float imu_gyro_scale = (2000.0f / 32768.0f) * (M_PI / 180.0f);     // 陀螺仪scale (rad/s per LSB)
 
-//-------------------------------------------------------------------------------------------------------------------
-// 函数简介     初始化IMU scale值（使用硬编码的IMU963RA参数）
-// 使用示例     IMU963RA_Init_Scale();
-//-------------------------------------------------------------------------------------------------------------------
-void IMU963RA_Init_Scale(void)
-{
-    // IMU963RA 典型参数：
-    // 加速度计：±8g, 16-bit
-    // 陀螺仪：±2000°/s, 16-bit
-    // 磁力计：±4912 μT, 16-bit
-    
-    // 加速度计 scale: 8g / 32768 * 9.81 m/s²/g
-    imu_acc_scale = (8.0f / 32768.0f) * 9.81f;
-    
-    // 陀螺仪 scale: 2000°/s / 32768 * π/180 rad/°
-    imu_gyro_scale = (2000.0f / 32768.0f) * (M_PI / 180.0f);
-    
-    // 磁力计 scale: 4912 μT / 32768
-    #if (IMU_ANALYSIS_USE_MAG == 1)
-    imu_mag_scale = 4912.0f / 32768.0f;
-    #endif
-}
+
 
 
 // 零飘校准校准需要的样本数
@@ -153,7 +131,7 @@ static void MadgwickQuaternionUpdate(Axis3f acc, Axis3f gyro, Axis3f mag, float 
     float s1, s2, s3, s4;
     float qDot1, qDot2, qDot3, qDot4;
     float hx, hy;
-    float _2q1mx, _2q1my, _2q1mz, _2q2mx, _2bx, _2bz, _4bx, _4bz, _2q1, _2q2, _2q3, _2q4, _2q1q3, _2q2q3, _2q3q4, q1q1, q1q2, q1q3, q1q4, q2q2, q2q3, q2q4, q3q3, q3q4, q4q4;
+    float _2q1mx, _2q1my, _2q1mz, _2q2mx, _2bx, _2bz, _4bx, _4bz, _2q1, _2q2, _2q3, _2q4, _2q1q3, _2q3q4, q1q1, q1q2, q1q3, q1q4, q2q2, q2q3, q2q4, q3q3, q3q4, q4q4;
 
     float ax = acc.x;
     float ay = acc.y;
@@ -186,7 +164,6 @@ static void MadgwickQuaternionUpdate(Axis3f acc, Axis3f gyro, Axis3f mag, float 
             _2q3 = 2.0f * madgwick_q3;
             _2q4 = 2.0f * madgwick_q4;
             _2q1q3 = 2.0f * madgwick_q1 * madgwick_q3;
-            _2q2q3 = 2.0f * madgwick_q2 * madgwick_q3;
             _2q3q4 = 2.0f * madgwick_q3 * madgwick_q4;
             q1q1 = madgwick_q1 * madgwick_q1;
             q1q2 = madgwick_q1 * madgwick_q2;
@@ -216,7 +193,6 @@ static void MadgwickQuaternionUpdate(Axis3f acc, Axis3f gyro, Axis3f mag, float 
             _2q3 = 2.0f * madgwick_q3;
             _2q4 = 2.0f * madgwick_q4;
             _2q1q3 = 2.0f * madgwick_q1 * madgwick_q3;
-            _2q2q3 = 2.0f * madgwick_q2 * madgwick_q3;
             _2q3q4 = 2.0f * madgwick_q3 * madgwick_q4;
             q1q1 = madgwick_q1 * madgwick_q1;
             q1q2 = madgwick_q1 * madgwick_q2;
@@ -629,30 +605,7 @@ static float Kalman_Calculate(KalmanFilter* kf, float newAngle, float newRate, f
 }
 
 // 动态调整R_measure（根据加速度计模长判断运动状态）
-static float Get_Dynamic_Rmeasure(float ax, float ay, float az)
-{
-    // 计算加速度模长（使用真实的scale值转换到m/s²）
-    float acc_scaled = ax * imu_acc_scale;
-    float ay_scaled = ay * imu_acc_scale;
-    float az_scaled = az * imu_acc_scale;
-    
-    // 计算模长（理想值为1g ≈ 9.81 m/s²）
-    float acc_mag = sqrtf(acc_scaled*acc_scaled + ay_scaled*ay_scaled + az_scaled*az_scaled);
-    
-    // 归一化到1g参考系（9.81 m/s²）
-    acc_mag = acc_mag / 9.81f;
-    
-    // 静态（模长接近1g）：信任加速度计，R小
-    if(fabs(acc_mag - 1.0f) < 0.1f)
-    {
-        return 0.03f;  // 静态R值
-    }
-    // 动态（模长偏离1g）：不信任加速度计，R大
-    else
-    {
-        return 0.3f;   // 动态R值
-    }
-}
+
 /*******************************************************************************************************************/
 /*------------------------------------------------------------------------------------------------[E] 卡尔曼滤波 [E]*/
 /*******************************************************************************************************************/
@@ -734,9 +687,9 @@ void IMU963RA_Analysis_Update(void)
     
 #if USE_KALMAN_FILTER
     // 卡尔曼滤波模式（Roll/Pitch轴）
-    // 动态调整R_measure（根据加速度计状态）
-    kf_roll.R_measure  = Get_Dynamic_Rmeasure(ax, ay, az);
-    kf_pitch.R_measure = kf_roll.R_measure;
+    // 使用固定的R_measure值
+    kf_roll.R_measure  = 0.03f;
+    kf_pitch.R_measure = 0.03f;
     
     // 卡尔曼滤波计算
     Roll  = Kalman_Calculate(&kf_roll, RollAcc, gyro_roll_rate, dt);
