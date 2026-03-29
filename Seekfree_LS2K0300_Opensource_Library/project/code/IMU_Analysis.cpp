@@ -2,6 +2,7 @@
 * IMU姿态解算
 ********************************************************************************************************************/
 #include "zf_device_imu963ra.h"
+#include "zf_driver_file.h"
 
 #include "IMU_Analysis.h"
 #include "MahonyAHRS.h"
@@ -15,6 +16,53 @@ volatile float Roll_Result = 0.0f;   // 横滚角（Roll）
 volatile float Pitch_Result = 0.0f;  // 俯仰角（Pitch）
 // IMU963RA 分析使能标志位
 volatile uint8_t IMU963RA_analysis_enable = 0;
+
+// 坐标系配置：根据您的IMU安装方向调整
+// 1 = 正常方向，-1 = 反方向
+// 加速度计和陀螺仪的坐标系
+#define IMU_AXIS_X_SIGN  1
+#define IMU_AXIS_Y_SIGN  1
+#define IMU_AXIS_Z_SIGN  -1  // Z轴取反，因为重力方向是-Z
+
+// 磁力计的坐标系（可能需要单独调整）
+#define IMU_MAG_X_SIGN   1
+#define IMU_MAG_Y_SIGN   1
+#define IMU_MAG_Z_SIGN   1
+
+// 磁力计轴旋转配置
+// 0: 不旋转
+// 1: 顺时针旋转 90 度
+// 2: 顺时针旋转 180 度
+// 3: 顺时针旋转 270 度
+#define IMU_MAG_AXIS_ROTATE  1
+
+// IIO子系统读取的scale值（如果没有scale文件，则使用硬编码的IMU963RA参数）
+static float imu_acc_scale = 0.0f;      // 加速度计scale (m/s² per LSB)
+static float imu_gyro_scale = 0.0f;     // 陀螺仪scale (rad/s per LSB)
+static float imu_mag_scale = 0.0f;      // 磁力计scale (uT per LSB)
+
+//-------------------------------------------------------------------------------------------------------------------
+// 函数简介     初始化IMU scale值（使用硬编码的IMU963RA参数）
+// 使用示例     IMU963RA_Init_Scale();
+//-------------------------------------------------------------------------------------------------------------------
+void IMU963RA_Init_Scale(void)
+{
+    // IMU963RA 典型参数：
+    // 加速度计：±8g, 16-bit
+    // 陀螺仪：±2000°/s, 16-bit
+    // 磁力计：±4912 μT, 16-bit
+    
+    // 加速度计 scale: 8g / 32768 * 9.81 m/s²/g
+    imu_acc_scale = (8.0f / 32768.0f) * 9.81f;
+    
+    // 陀螺仪 scale: 2000°/s / 32768 * π/180 rad/°
+    imu_gyro_scale = (2000.0f / 32768.0f) * (M_PI / 180.0f);
+    
+    // 磁力计 scale: 4912 μT / 32768
+    #if (IMU_ANALYSIS_USE_MAG == 1)
+    imu_mag_scale = 4912.0f / 32768.0f;
+    #endif
+}
 
 
 // 零飘校准校准需要的样本数
@@ -35,7 +83,7 @@ static uint16_t calib_count = 0;
 
 
 // 选择九轴数据的解算
-#if (USE_MAG == 1)
+#if (IMU_ANALYSIS_USE_MAG == 1)
 
 //-------------------------------------------------------------------------------------------------------------------
 // 函数简介     IMU963RA 获取九轴原始数据
@@ -46,7 +94,7 @@ static uint16_t calib_count = 0;
 // imu963ra_acc_x           imu963ra_acc_y          imu963ra_acc_z
 // imu963ra_gyro_x          imu963ra_gyro_y         imu963ra_gyro_z
 // imu963ra_mag_x           imu963ra_mag_y          imu963ra_mag_z  
-void imu963ra_get_data(void)
+void imu963ra_update_data(void)
 {
     imu963ra_get_acc();
     imu963ra_get_gyro();
@@ -56,20 +104,13 @@ void imu963ra_get_data(void)
 // 条件编译选项
 #define ENABLE_FULL_EULER    1   // 1: 计算全部欧拉角, 0: 只计算Yaw角
 
-// 传感器数据缩放因子
-#define GYRO_SCALE    (2000.0f / 32768.0f * M_PI / 180.0f)  // 陀螺仪刻度因子（转换为rad/s）
-#define ACC_SCALE     (8.0f / 32768.0f * 9.81f)            // 加速度计刻度因子（转换为m/s²）
-#define MAG_SCALE     (4912.0f / 32768.0f)                 // 磁力计刻度因子（转换为uT）
-
 
 /*******************************************************************************************************************/
 /*[S] 零飘校准 [S]--------------------------------------------------------------------------------------------------*/
 /*******************************************************************************************************************/
 
 static int32_t sum_gx = 0, sum_gy = 0, sum_gz = 0;
-static int32_t sum_mx = 0, sum_my = 0, sum_mz = 0;
 static float gyro_off_x = 0, gyro_off_y = 0, gyro_off_z = 0;
-static float mag_off_x = 0, mag_off_y = 0, mag_off_z = 0;
 
 //-------------------------------------------------------------------------------------------------------------------
 // 函数简介     IMU963RA 校准初始化
@@ -83,9 +124,6 @@ void IMU963RA_Calibration_Start(void)
     sum_gx = 0;
     sum_gy = 0;
     sum_gz = 0;
-    sum_mx = 0;
-    sum_my = 0;
-    sum_mz = 0;
 }
 
 //-------------------------------------------------------------------------------------------------------------------
@@ -112,15 +150,12 @@ int8_t IMU963RA_Calibration_Check(void)
     // 检查是否允许收集数据
     if(IMU963RA_analysis_enable)
     {
-        imu963ra_get_data();
+        imu963ra_update_data();
 
-        // 收集数据
+        // 收集数据（仅陀螺仪）
         sum_gx += imu963ra_gyro_x;
         sum_gy += imu963ra_gyro_y;
         sum_gz += imu963ra_gyro_z;
-        sum_mx += imu963ra_mag_x;
-        sum_my += imu963ra_mag_y;
-        sum_mz += imu963ra_mag_z;
         calib_count++;
 
         IMU963RA_analysis_enable = 0;
@@ -130,9 +165,6 @@ int8_t IMU963RA_Calibration_Check(void)
             gyro_off_x = (float)sum_gx / CALIB_TARGET_SAMPLES;
             gyro_off_y = (float)sum_gy / CALIB_TARGET_SAMPLES;
             gyro_off_z = (float)sum_gz / CALIB_TARGET_SAMPLES;
-            mag_off_x  = (float)sum_mx / CALIB_TARGET_SAMPLES;
-            mag_off_y  = (float)sum_my / CALIB_TARGET_SAMPLES;
-            mag_off_z  = (float)sum_mz / CALIB_TARGET_SAMPLES;
             
             calib_state = CALIB_STATE_DONE;
         }
@@ -193,18 +225,41 @@ void IMU963RA_Analysis_Update(void)
         return;  // 未校准完成，不执行解算
     }
     
-    float ax = imu963ra_acc_x * ACC_SCALE;
-    float ay = imu963ra_acc_y * ACC_SCALE;
-    float az = imu963ra_acc_z * ACC_SCALE;
+    // 使用从IIO子系统读取的真实scale值（应用坐标系配置）
+    float ax = imu963ra_acc_x * IMU_AXIS_X_SIGN * imu_acc_scale;
+    float ay = imu963ra_acc_y * IMU_AXIS_Y_SIGN * imu_acc_scale;
+    float az = imu963ra_acc_z * IMU_AXIS_Z_SIGN * imu_acc_scale;
 
-    // 应用零飘校准
-    float gx = (imu963ra_gyro_x - gyro_off_x) * GYRO_SCALE;
-    float gy = (imu963ra_gyro_y - gyro_off_y) * GYRO_SCALE;
-    float gz = (imu963ra_gyro_z - gyro_off_z) * GYRO_SCALE;
+    // 应用零飘校准，陀螺仪scale已经是rad/s（IIO子系统单位）（应用坐标系配置）
+    float gx = (imu963ra_gyro_x - gyro_off_x) * IMU_AXIS_X_SIGN * imu_gyro_scale;
+    float gy = (imu963ra_gyro_y - gyro_off_y) * IMU_AXIS_Y_SIGN * imu_gyro_scale;
+    float gz = (imu963ra_gyro_z - gyro_off_z) * IMU_AXIS_Z_SIGN * imu_gyro_scale;
     
-    float mx = (imu963ra_mag_x - mag_off_x) * MAG_SCALE;
-    float my = (imu963ra_mag_y - mag_off_y) * MAG_SCALE;
-    float mz = (imu963ra_mag_z - mag_off_z) * MAG_SCALE;
+    // 磁力计scale已经是uT（IIO子系统单位）（应用磁力计特殊坐标系配置）
+    // 注意：磁力计不做零飘校准！
+    float mx0 = imu963ra_mag_x * IMU_MAG_X_SIGN * imu_mag_scale;
+    float my0 = imu963ra_mag_y * IMU_MAG_Y_SIGN * imu_mag_scale;
+    float mz0 = imu963ra_mag_z * IMU_MAG_Z_SIGN * imu_mag_scale;
+    
+    // 应用磁力计轴旋转
+    float mx, my, mz;
+    #if IMU_MAG_AXIS_ROTATE == 0
+    mx = mx0;
+    my = my0;
+    mz = mz0;
+    #elif IMU_MAG_AXIS_ROTATE == 1
+    mx = -my0;  // 顺时针旋转 90 度
+    my = mx0;
+    mz = mz0;
+    #elif IMU_MAG_AXIS_ROTATE == 2
+    mx = -mx0;  // 顺时针旋转 180 度
+    my = -my0;
+    mz = mz0;
+    #elif IMU_MAG_AXIS_ROTATE == 3
+    mx = my0;   // 顺时针旋转 270 度
+    my = -mx0;
+    mz = mz0;
+    #endif
     
     // 调用Mahony AHRS算法
     MahonyAHRSupdate(gx, gy, gz, ax, ay, az, mx, my, mz);
@@ -240,10 +295,10 @@ void IMU963RA_Get_Calibrated_Data(float *acc_x, float *acc_y, float *acc_z,
     *gyro_y = (float)imu963ra_gyro_y - gyro_off_y;
     *gyro_z = (float)imu963ra_gyro_z - gyro_off_z;
     
-    // 磁力计赋值
-    *mag_x = (float)imu963ra_mag_x - mag_off_x;
-    *mag_y = (float)imu963ra_mag_y - mag_off_y;
-    *mag_z = (float)imu963ra_mag_z - mag_off_z;
+    // 磁力计赋值（不做零飘校准）
+    *mag_x = (float)imu963ra_mag_x;
+    *mag_y = (float)imu963ra_mag_y;
+    *mag_z = (float)imu963ra_mag_z;
 } 
 // 简化版：直接重置四元数为初始状态
 void IMU963RA_Reset_Yaw(void)
@@ -270,7 +325,7 @@ void IMU963RA_Reset_Yaw(void)
 
 
 // 六轴数据的解算
-#if (USE_MAG == 0)
+#if (IMU_ANALYSIS_USE_MAG == 0)
 
 //-------------------------------------------------------------------------------------------------------------------
 // 函数简介     IMU963RA 获取六轴原始数据
@@ -280,7 +335,7 @@ void IMU963RA_Reset_Yaw(void)
 // IMU963RA 原始数据变量
 // imu963ra_acc_x           imu963ra_acc_y          imu963ra_acc_z
 // imu963ra_gyro_x          imu963ra_gyro_y         imu963ra_gyro_z
-void imu963ra_get_data(void)
+void imu963ra_update_data(void)
 {
     imu963ra_get_acc();
     imu963ra_get_gyro();
@@ -337,7 +392,7 @@ int8_t IMU963RA_Calibration_Check(void)
     // 检查是否允许收集数据
     if(IMU963RA_analysis_enable)
     {
-        imu963ra_get_data();
+        imu963ra_update_data();
         // 收集数据
         sum_gx += imu963ra_gyro_x;
         sum_gy += imu963ra_gyro_y;
@@ -455,10 +510,16 @@ static float Kalman_Calculate(KalmanFilter* kf, float newAngle, float newRate, f
 // 动态调整R_measure（根据加速度计模长判断运动状态）
 static float Get_Dynamic_Rmeasure(float ax, float ay, float az)
 {
-    // 计算加速度模长（理想值为1g，约16384 LSB/g）
-    float acc_mag = sqrtf((float)ax*ax + (float)ay*ay + (float)az*az);
-    // 归一化到1g参考系
-    acc_mag = acc_mag / 16384.0f;
+    // 计算加速度模长（使用真实的scale值转换到m/s²）
+    float acc_scaled = ax * imu_acc_scale;
+    float ay_scaled = ay * imu_acc_scale;
+    float az_scaled = az * imu_acc_scale;
+    
+    // 计算模长（理想值为1g ≈ 9.81 m/s²）
+    float acc_mag = sqrtf(acc_scaled*acc_scaled + ay_scaled*ay_scaled + az_scaled*az_scaled);
+    
+    // 归一化到1g参考系（9.81 m/s²）
+    acc_mag = acc_mag / 9.81f;
     
     // 静态（模长接近1g）：信任加速度计，R小
     if(fabs(acc_mag - 1.0f) < 0.1f)
@@ -501,8 +562,8 @@ static float Pitch_Temp = 0.0f;       // 俯仰角 中间处理值
 // 固化解算系数
 // 弧度转角度
 const float mpu6050_const_data1 = (1.0f / M_PI) * 180.0f;
-// 陀螺仪积分系数
-const float mpu6050_const_data2 = (1.0f / 32768.0f) * 2000.0f;
+// rad/s 转 °/s 的转换系数
+const float rad_to_deg_per_s = (180.0f / M_PI);
 
 // IMU963RA 姿态解算
 void IMU963RA_Analysis_Update(void)
@@ -523,23 +584,23 @@ void IMU963RA_Analysis_Update(void)
         kalman_init_flag = 1;
     }
     
-    // 应用校准与中间变量赋值
-    float ax = imu963ra_acc_x;
-    float ay = imu963ra_acc_y;
-    float az = imu963ra_acc_z;
+    // 应用校准与中间变量赋值（应用坐标系配置）
+    float ax = imu963ra_acc_x * IMU_AXIS_X_SIGN;
+    float ay = imu963ra_acc_y * IMU_AXIS_Y_SIGN;
+    float az = imu963ra_acc_z * IMU_AXIS_Z_SIGN;
 
-    float gx = imu963ra_gyro_x - gyro_off_x;
-    float gy = imu963ra_gyro_y - gyro_off_y;
-    float gz = imu963ra_gyro_z - gyro_off_z;
+    float gx = (imu963ra_gyro_x - gyro_off_x) * IMU_AXIS_X_SIGN;
+    float gy = (imu963ra_gyro_y - gyro_off_y) * IMU_AXIS_Y_SIGN;
+    float gz = (imu963ra_gyro_z - gyro_off_z) * IMU_AXIS_Z_SIGN;
 
     // 输入死区
     if(-4 < gx && gx < 4) { gx = 0; }
     if(-4 < gy && gy < 4) { gy = 0; }
     if(-4 < gz && gz < 4) { gz = 0; }
     
-    // 计算陀螺仪角速度（转换为 °/s）
-    float gyro_roll_rate  = (float)gx * mpu6050_const_data2;
-    float gyro_pitch_rate = (float)gy * mpu6050_const_data2;
+    // 使用从IIO子系统读取的真实scale值，陀螺仪scale已经是rad/s
+    float gyro_roll_rate  = (float)gx * imu_gyro_scale * rad_to_deg_per_s;
+    float gyro_pitch_rate = (float)gy * imu_gyro_scale * rad_to_deg_per_s;
     
     // 横滚角加速度计计算
     RollAcc   = atan2f((float)ay, (float)az) * mpu6050_const_data1;
@@ -558,16 +619,16 @@ void IMU963RA_Analysis_Update(void)
     Roll  = Kalman_Calculate(&kf_roll, RollAcc, gyro_roll_rate, dt);
     Pitch = Kalman_Calculate(&kf_pitch, PitchAcc, gyro_pitch_rate, dt);
 #else
-    // 互补滤波模式
-    float RollGyro  = Roll + (float)gx * mpu6050_const_data2 * dt;
+    // 互补滤波模式（使用真实的scale值）
+    float RollGyro  = Roll + (float)gx * imu_gyro_scale * rad_to_deg_per_s * dt;
     Roll      = 0.005 * RollAcc + (1 - 0.005) * RollGyro;
     
-    float PitchGyro = Pitch + (float)gy * mpu6050_const_data2 * dt;
+    float PitchGyro = Pitch + (float)gy * imu_gyro_scale * rad_to_deg_per_s * dt;
     Pitch     = 0.005 * PitchAcc + (1 - 0.005) * PitchGyro;
 #endif
     
     // 偏航角计算：仅陀螺仪积分（无加速度计校准，会漂移）
-    Yaw       += (float)gz * mpu6050_const_data2 * dt * 1.014f;
+    Yaw       += (float)gz * imu_gyro_scale * rad_to_deg_per_s * dt * 1.014f;
     
     // 一阶低通滤波
     Roll_Temp  = MPU6050_LOW_PASS_FILTER * Roll + (1 - MPU6050_LOW_PASS_FILTER) * Roll_Temp;

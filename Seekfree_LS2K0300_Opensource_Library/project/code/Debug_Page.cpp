@@ -383,15 +383,18 @@ int Debug_IMU963RA(void)
     }
     ips200_show_string(40 , 32 , "DONE");
 
+
     float ax = 0.0f;
     float ay = 0.0f;
     float az = 0.0f;
     float gx = 0.0f;
     float gy = 0.0f;
     float gz = 0.0f;
+#if (IMU_ANALYSIS_USE_MAG == 1)
     float mx = 0.0f;
     float my = 0.0f;
     float mz = 0.0f;
+#endif
 
     while(1)
     {
@@ -423,6 +426,8 @@ int Debug_IMU963RA(void)
                         break;  // 中止零飘校准
                     }        
                 }
+                IMU963RA_Reset_Yaw();
+                Debug_IMU963RA_UI();
                 ips200_show_string(40 , 32 , "DONE");
             }
             else if (Key_Check(KEY_NAME_BACK,KEY_SINGLE))
@@ -433,26 +438,32 @@ int Debug_IMU963RA(void)
 
             if (IMU963RA_analysis_enable)
             {
-                imu963ra_get_data();
+                imu963ra_update_data();
                 IMU963RA_Analysis_Update();
                 IMU963RA_analysis_enable = 0;
-//                IMU963RA_Get_Calibrated_Data(&ax, &ay, &az, &gx, &gy, &gz);
+            #if (IMU_ANALYSIS_USE_MAG == 1)
+                IMU963RA_Get_Calibrated_Data(&ax, &ay, &az, &gx, &gy, &gz, &mx, &my, &mz);
+            #else
+                IMU963RA_Get_Calibrated_Data(&ax, &ay, &az, &gx, &gy, &gz);
+            #endif
             }
 
 
 
-//            ips200_Printf(24 ,48 , "%.1f  ", ax);
-//            ips200_Printf(104,48 , "%.1f  ", ay);
-//            ips200_Printf(184,48 , "%.1f  ", az);
-//            ips200_Printf(24 ,64 , "%.1f  ", gx);
-//            ips200_Printf(104,64 , "%.1f  ", gy);
-//            ips200_Printf(184,64 , "%.1f  ", gz);
-//            ips200_Printf(24 ,80 , "%.1f  ", mx);
-//            ips200_Printf(104,80 , "%.1f  ", my);
-//            ips200_Printf(184,80 , "%.1f  ", mz);
-            ips200_Printf(24 ,96 , "%.1f  ", Roll_Result);
-            ips200_Printf(104,96 , "%.1f  ", Yaw_Result);
-            ips200_Printf(184,96 , "%.1f  ", Pitch_Result);
+            ips200_Printf(24 ,48 , "%.0f ", ax);
+            ips200_Printf(104,48 , "%.0f ", ay);
+            ips200_Printf(184,48 , "%.0f ", az);
+            ips200_Printf(24 ,64 , "%.1f ", gx);
+            ips200_Printf(104,64 , "%.1f ", gy);
+            ips200_Printf(184,64 , "%.1f ", gz);
+#if (IMU_ANALYSIS_USE_MAG == 1)
+            ips200_Printf(24 ,80 , "%.1f ", mx);
+            ips200_Printf(104,80 , "%.1f ", my);
+            ips200_Printf(184,80 , "%.1f ", mz);
+#endif
+            ips200_Printf(24 ,96 , "%.1f ", Roll_Result);
+            ips200_Printf(104,96 , "%.1f ", Yaw_Result);
+            ips200_Printf(184,96 , "%.1f ", Pitch_Result);
         
     }
 }

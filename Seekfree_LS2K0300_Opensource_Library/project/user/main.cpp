@@ -97,6 +97,9 @@ int main(int, char**)
     // 外设初始化
     Peripheral_Init();
 
+    // 初始化IMU scale值
+    IMU963RA_Init_Scale();
+
     // 创建5ms定时器
     pit_timer_5ms = new timer_fd(5, pit_callback_5ms);
     pit_timer_5ms->start();  
