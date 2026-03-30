@@ -64,9 +64,6 @@ int main(int, char**)
     atexit(cleanup);
     signal(SIGINT, sigint_handler);
 
-    //获取imu963ra设备信息
-    // imu_get_dev_info();
-
     // 初始化屏幕
     ips200_init("/dev/fb0");
 
@@ -81,10 +78,6 @@ int main(int, char**)
     // 创建一个定时器1ms周期，回调函数为pit_callback
     pit_timer = new timer_fd(10, pit_callback);
     pit_timer->start();
-
-    // 打印PWM频率和duty最大值
-    // printf("servo pwm freq = %d Hz\r\n", servo_pwm_info.freq);
-    // printf("servo pwm duty_max = %d\r\n", servo_pwm_info.duty_max);
 
     // 主循环
     while (1) {

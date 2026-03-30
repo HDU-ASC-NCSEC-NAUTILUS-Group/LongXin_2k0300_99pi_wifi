@@ -11,23 +11,23 @@ int16 imu_mag_x,  imu_mag_y,  imu_mag_z;
 // iio框架获取设备名
 const char imu_name_path[] = 
 {
-	"/sys/bus/iio/devices/iio:device1/name"
+	"/sys/bus/iio/devices/iio:device0/name"
 };
 
 // iio框架对应的文件路径
 const char *imu_file_path[] = 
 {
-	"/sys/bus/iio/devices/iio:device1/in_accel_x_raw",
-	"/sys/bus/iio/devices/iio:device1/in_accel_y_raw",
-	"/sys/bus/iio/devices/iio:device1/in_accel_z_raw",
+	"/sys/bus/iio/devices/iio:device0/in_accel_x_raw",
+	"/sys/bus/iio/devices/iio:device0/in_accel_y_raw",
+	"/sys/bus/iio/devices/iio:device0/in_accel_z_raw",
 
-	"/sys/bus/iio/devices/iio:device1/in_anglvel_x_raw",
-	"/sys/bus/iio/devices/iio:device1/in_anglvel_y_raw",
-	"/sys/bus/iio/devices/iio:device1/in_anglvel_z_raw",
+	"/sys/bus/iio/devices/iio:device0/in_anglvel_x_raw",
+	"/sys/bus/iio/devices/iio:device0/in_anglvel_y_raw",
+	"/sys/bus/iio/devices/iio:device0/in_anglvel_z_raw",
 
-	"/sys/bus/iio/devices/iio:device1/in_magn_x_raw",
-	"/sys/bus/iio/devices/iio:device1/in_magn_y_raw",
-	"/sys/bus/iio/devices/iio:device1/in_magn_z_raw",
+	"/sys/bus/iio/devices/iio:device0/in_magn_x_raw",
+	"/sys/bus/iio/devices/iio:device0/in_magn_y_raw",
+	"/sys/bus/iio/devices/iio:device0/in_magn_z_raw",
 };
 
 
