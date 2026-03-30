@@ -1,3 +1,4 @@
+
 /*********************************************************************************************************************
 * LS2K0300 Opensourec Library 即（LS2K0300 开源库）是一个基于官方 SDK 接口的第三方开源库
 * Copyright (c) 2022 SEEKFREE 逐飞科技
@@ -39,16 +40,11 @@ timer_fd *pit_timer;
 
 float roll, pitch, yaw;
 
+// 里面放入中断代码
 void pit_callback()
 {
-    // 获取IMU数据并更新四元数滤波器
-    imu963ra_get_acc();
-    imu963ra_get_gyro();
-    imu963ra_get_mag();
-    //四元数更新
-    quaternion_update();
-}
 
+}
 
 void sigint_handler(int signum) 
 {
@@ -74,9 +70,6 @@ int main(int, char**)
     // 初始化屏幕
     ips200_init("/dev/fb0");
 
-    // 初始化四元数滤波器（比例增益0.5，积分增益0.0，可根据实际情况调整）
-    quaternion_init(0.5f, 0.0f);
-
     // 初始化UVC摄像头
     if (uvc_camera_init("/dev/video0") < 0) {
         return -1;
@@ -86,7 +79,7 @@ int main(int, char**)
     pwm_get_dev_info(SERVO_MOTOR1_PWM, &servo_pwm_info);
 
     // 创建一个定时器1ms周期，回调函数为pit_callback
-    pit_timer = new timer_fd(1, pit_callback);
+    pit_timer = new timer_fd(10, pit_callback);
     pit_timer->start();
 
     // 打印PWM频率和duty最大值
@@ -95,13 +88,9 @@ int main(int, char**)
 
     // 主循环
     while (1) {
-        //object_tracking();  // 红色物块跟踪显示
-        // 打印yaw值
-        quaternion_get_euler(&roll, &pitch, &yaw);
-        printf("roll=%.2f pitch=%.2f yaw=%.2f\r\n", roll, pitch, yaw);
-        system_delay_ms(10);
+        object_tracking();  // 红色物块跟踪显示
+        coordinate_transformation();  // 坐标转换显示
     }
 
     return 0;
 }
-
