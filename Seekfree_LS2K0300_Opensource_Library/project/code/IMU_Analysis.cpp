@@ -109,7 +109,7 @@ static float madgwick_q4 = 0.0f; // 四元数k分量
 // 调整建议：
 //   - 增大（如0.15-0.3）：响应更快，适合快速运动场景
 //   - 减小（如0.05-0.08）：更稳定，适合平稳场景
-static float madgwick_beta = 0.1f;
+static float madgwick_beta = 0.15f;
 
 // 时间戳记录（用于计算dt）
 static std::chrono::steady_clock::time_point last_time_madgwick = std::chrono::steady_clock::now();
@@ -125,7 +125,7 @@ static float Get_dt(void)
     auto time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_time_madgwick).count();
     float dt = (float)time_diff / 1000.0f;
     if (dt > 0.05f) dt = 0.05f; // 限制最大dt
-    if (dt < 0.001f) dt = 0.001f; // 限制最小dt
+    if (dt < 0.001f) dt = 0.005f; // 限制最小dt
     last_time_madgwick = current_time;
     return dt;
 }
@@ -536,7 +536,7 @@ static float Get_Real_dt(void)
     // 限制dt范围
     float dt = (float)time_diff / 1000.0f;
     if (dt > 0.05f) dt = 0.05f; // 限制最大dt
-    if (dt < 0.001f) dt = 0.001f; // 限制最小dt
+    if (dt < 0.001f) dt = 0.005f; // 限制最小dt
     
     last_time = current_time;
     return dt;
@@ -723,7 +723,7 @@ static float Pitch_Temp = 0.0f;       // 俯仰角 中间处理值
 // 输出死区系数
 #define MPU6050_OUTPUT_DEAD_ZONE 0.05f
 // Yaw 轴陀螺仪增益系数（用于修正 Yaw 变化偏小的问题）
-#define YAW_GYRO_GAIN  1.0f
+#define YAW_GYRO_GAIN  1.38f
 
 // 固化解算系数
 // 弧度转角度

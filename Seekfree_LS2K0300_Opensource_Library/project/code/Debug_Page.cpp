@@ -450,12 +450,12 @@ int Debug_IMU963RA(void)
 
 
 
-            ips200_Printf(24 ,48 , "%.0f ", ax);
-            ips200_Printf(104,48 , "%.0f ", ay);
-            ips200_Printf(184,48 , "%.0f ", az);
-            ips200_Printf(24 ,64 , "%.1f ", gx);
-            ips200_Printf(104,64 , "%.1f ", gy);
-            ips200_Printf(184,64 , "%.1f ", gz);
+//            ips200_Printf(24 ,48 , "%.0f ", ax);
+//            ips200_Printf(104,48 , "%.0f ", ay);
+//            ips200_Printf(184,48 , "%.0f ", az);
+//            ips200_Printf(24 ,64 , "%.1f ", gx);
+//            ips200_Printf(104,64 , "%.1f ", gy);
+//            ips200_Printf(184,64 , "%.1f ", gz);
 #if (IMU_ANALYSIS_USE_MAG == 1)
             ips200_Printf(24 ,80 , "%.1f ", mx);
             ips200_Printf(104,80 , "%.1f ", my);

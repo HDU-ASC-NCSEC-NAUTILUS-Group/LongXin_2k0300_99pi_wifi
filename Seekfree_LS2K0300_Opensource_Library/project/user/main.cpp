@@ -49,12 +49,13 @@ timer_fd *pit_timer_10ms;
 
 void pit_callback_5ms()
 {
-    IMU963RA_analysis_enable = 1;
+    
 }
 
 void pit_callback_10ms()
 {
     Key_Tick();
+    IMU963RA_analysis_enable = 1;
 }
 
 /*******************************************************************************************************************/
@@ -109,6 +110,6 @@ int main(int, char**)
 
     while(1)
     {
-        Menu_Show();
+//        Menu_Show();
     }
 }
