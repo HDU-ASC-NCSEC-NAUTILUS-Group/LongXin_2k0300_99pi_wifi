@@ -166,7 +166,6 @@ void object_tracking(void)
     //舵机控制
     coordinate_x = red_center.x;
     coordinate_y = red_center.y;
-    servo_test();
 }
 
 void coordinate_transformation(void)
