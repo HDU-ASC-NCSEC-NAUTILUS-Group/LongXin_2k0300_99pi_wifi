@@ -27,6 +27,9 @@ float angle_3 = 0.0f;   // 控制末端执行器（夹爪）开合程度
 
 float len = sqrt(real_x * real_x + real_y * real_y);  // 目标点与机械臂基座的距离
 
+float L = len - delta_x;  // 目标点与机械臂基座的水平距离
+float H = h;              // 机械臂的高度
+
 // 机械臂控制实例
 ArmControl arm_ctrl = {
     .current_state = ARM_STATE_IDLE,
@@ -47,9 +50,6 @@ ArmControl arm_ctrl = {
 void servo_control(void)
 {
     angle_0 = atan2(real_x, real_y) * 180.0f / CV_PI;  // 基座旋转角度
-
-    float L = len - delta_x;  // 目标点与机械臂基座的水平距离
-    float H = h;              // 机械臂的高度
 
     // 计算得到angle_1和angle_2
     int Angle_1 = asin((pow(L,2.0) + pow(H,2.0) + pow(Arm_1,2.0) - pow(Arm_2,2.0)) / (2 * Arm_1 * sqrt(pow(L,2.0) + pow(H,2.0)))) * 180.0f / CV_PI - atan2(H, L) * 180.0f / CV_PI;  // 第一个机械臂的角度
@@ -106,7 +106,7 @@ static void calc_target_angles(void)
     if(real_x < -999.0f || real_y < -999.0f) return; // 无有效坐标
     
     // 基座角度（angle0）：目标在基座坐标系的水平角度
-    arm_ctrl.target_angle0 = atan2(real_x, real_y) * 180.0f / CV_PI + 90.0f;
+    arm_ctrl.target_angle0 = atan2(real_x, real_y) * 180.0f / CV_PI + 90.0f;   // 可能需要根据实际修改
     // 限制基座角度范围
     arm_ctrl.target_angle0 = fmax(SERVO_MOTOR_L_MAX, fmin(SERVO_MOTOR_R_MAX, arm_ctrl.target_angle0));
 
@@ -239,3 +239,25 @@ void servo_test(void)
 {
     servo_state_machine();
 }
+
+// 在龙芯上解算出各个舵机的角度，发送到arduino上处理
+static int16_t calculate_angle_0(void)
+{
+    angle_0 = atan2(real_x, real_y) * 180.0f / CV_PI;  // 基座旋转角度
+    return (int16_t)(angle_0);
+}
+
+static int16_t calculate_angle_1(void)
+{
+    int Angle_1 = asin((pow(L,2.0) + pow(H,2.0) + pow(Arm_1,2.0) - pow(Arm_2,2.0)) / (2 * Arm_1 * sqrt(pow(L,2.0) + pow(H,2.0)))) * 180.0f / CV_PI - atan2(H, L) * 180.0f / CV_PI;  // 第一个机械臂的角度
+    angle_1 = Angle_1 + alpha;  // 调整第一个机械臂的角度
+    return (int16_t)(angle_1);
+}
+
+static int16_t calculate_angle_2(void)
+{
+    int Angle_2 = acos((pow(L,2.0) + pow(H,2.0) + pow(Arm_2,2.0) - pow(Arm_1,2.0)) / (2 * Arm_2 * sqrt(pow(L,2.0) + pow(H,2.0)))) * 180.0f / CV_PI - atan2(H, L) * 180.0f / CV_PI;  // 第二个机械臂的角度
+    angle_2 = angle_1 + 90.0f - alpha - Angle_2;  // 调整第二个机械臂的角度
+    return (int16_t)(angle_2);
+}
+

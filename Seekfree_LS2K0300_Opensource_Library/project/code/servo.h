@@ -70,4 +70,9 @@ void servo_state_machine(void);// 状态机处理核心函数
 void servo_set_angle_smooth(float *current, float target, float step); // 平滑角度调整
 void servo_control(void);
 
+// 角度计算函数（根据坐标解算目标角度）
+static int16_t calculate_angle_0(void);
+static int16_t calculate_angle_1(void);
+static int16_t calculate_angle_2(void);
+
 #endif
