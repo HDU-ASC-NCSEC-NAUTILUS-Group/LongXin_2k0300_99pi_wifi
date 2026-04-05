@@ -27,8 +27,9 @@ extern int16_t coordinate_y;
 // 从坐标转换函数获取的物理坐标
 extern float real_x, real_y;
 
-// 获取系统时间
-extern int32_t time_number;
+// 坐标稳定判定参数
+#define STABLE_COUNT    18    // 如果连续18次稳定则认为坐标稳定
+#define FLOAT_EPS       0.1f  // 物理坐标误差阈值
 
 // 机械臂状态机（贴合抓取流程）
 typedef enum
@@ -47,6 +48,7 @@ typedef struct
     ArmState current_state; // 当前状态
     bool start_flag;        // 启动标志（true=启动抓取流程）
     bool stop_flag;         // 停止标志（true=强制停止）
+
     // 目标角度（解算后的值）
     float target_angle0;    // 基座
     float target_angle1;    // 关节1
@@ -57,8 +59,13 @@ typedef struct
     float current_angle1;
     float current_angle2;
     float current_angle3;
-    // 状态计时（控制每个状态的持续时间）
-    uint32_t state_timer;
+
+    // 新增：坐标稳定判定变量
+    uint8_t stable_count;     // 稳定计数器
+    int16_t last_pixel_x;     // 上一次稳定的像素坐标X
+    int16_t last_pixel_y;     // 上一次稳定的像素坐标Y
+    float last_real_x;        // 上一次稳定的物理坐标X
+    float last_real_y;        // 上一次稳定的物理坐标Y
 } ArmControl;
 
 // 全局机械臂控制实例

@@ -6,7 +6,7 @@ struct pwm_info servo_pwm_info;
 float servo_motor_duty = 90.0;                                                  // 舵机动作角度
 float servo_motor_dir = 1;                                                      // 舵机动作状态
 
-// 红色物块质心坐标
+// 全局变量（不变）
 int16_t coordinate_x = 0;
 int16_t coordinate_y = 0;
 
@@ -35,15 +35,22 @@ ArmControl arm_ctrl = {
     .current_state = ARM_STATE_IDLE,
     .start_flag = false,
     .stop_flag = false,
+
     .target_angle0 = 90.0f,  // 初始基座角度（中间位）
     .target_angle1 = 35.0f,  // 初始关节1角度
     .target_angle2 = 90.0f,  // 初始关节2角度
-    .target_angle3 = 0.0f,   // 初始夹爪打开（0=最大打开）
+    .target_angle3 = 0.0f,   // 初始夹爪打开（0=最大打开）根据实际修改
+
     .current_angle0 = 90.0f,
     .current_angle1 = 35.0f,
     .current_angle2 = 90.0f,
     .current_angle3 = 0.0f,
-    .state_timer = 0
+
+    .stable_count = 0,
+    .last_pixel_x = 0,
+    .last_pixel_y = 0,
+    .last_real_x = 0.0f,
+    .last_real_y = 0.0f
 };
 
 // 根据摄像头获取的实际坐标解算angle_0、angle_1、angle_2、angle_3，控制机械臂夹取物块
@@ -63,11 +70,6 @@ void servo_control(void)
     当机械臂移动到目标位置时，angle_3 = 180.0f 夹子关闭，抓取物块
     再写一个机械臂复位代码，形成一套动作链
     */
-}
-
-int32_t systick_get_ms(void)
-{
-    return time_number;
 }
 
 // 机械臂初始化
@@ -147,17 +149,31 @@ void servo_state_machine(void)
             if(arm_ctrl.start_flag && (coordinate_x != -1 && coordinate_y != -1))
             {
                 arm_ctrl.current_state = ARM_STATE_TRACKING;
-                arm_ctrl.state_timer = systick_get_ms(); // 重置计时
+                arm_ctrl.stable_count = 0; // 重置计数
+                arm_ctrl.last_pixel_x = coordinate_x; // 记录初始坐标
+                arm_ctrl.last_pixel_y = coordinate_y;
             }
             break;
 
         case ARM_STATE_TRACKING: // 追踪状态：解算目标角度
             calc_target_angles();
             // 追踪5秒后进入移动状态
-            if(systick_get_ms() - arm_ctrl.state_timer > 5000)
+            if(coordinate_x == arm_ctrl.last_pixel_x && coordinate_y == arm_ctrl.last_pixel_y)
+            {
+                arm_ctrl.stable_count++;
+            }
+            else
+            {
+                arm_ctrl.stable_count = 0; // 坐标变化，清零计数
+                arm_ctrl.last_pixel_x = coordinate_x; // 更新基准坐标
+                arm_ctrl.last_pixel_y = coordinate_y;
+            }
+
+            // 连续稳定15次 → 切换到移动状态
+            if(arm_ctrl.stable_count >= STABLE_COUNT)
             {
                 arm_ctrl.current_state = ARM_STATE_MOVING;
-                arm_ctrl.state_timer = systick_get_ms();
+                arm_ctrl.stable_count = 0; // 重置计数
             }
             break;
 
@@ -176,7 +192,6 @@ void servo_state_machine(void)
                fabs(arm_ctrl.current_angle2 - arm_ctrl.target_angle2) < 0.1f)
             {
                 arm_ctrl.current_state = ARM_STATE_GRASPING;
-                arm_ctrl.state_timer = systick_get_ms();
             }
             break;
 
@@ -188,17 +203,15 @@ void servo_state_machine(void)
             {
                 arm_ctrl.target_angle1 += 5.0f; // 抬升5度
                 arm_ctrl.current_state = ARM_STATE_LIFTING;
-                arm_ctrl.state_timer = systick_get_ms();
             }
             break;
 
         case ARM_STATE_LIFTING: // 抬升状态：保持500ms
             servo_set_angle_smooth(&arm_ctrl.current_angle1, arm_ctrl.target_angle1, ANGLE_STEP);
             pwm_set_duty(SERVO_MOTOR2_PWM, (uint16)SERVO_MOTOR_DUTY(arm_ctrl.current_angle1));
-            if(systick_get_ms() - arm_ctrl.state_timer > STATE_DELAY)
+            if(fabs(arm_ctrl.current_angle1 - arm_ctrl.target_angle1) < 0.1f)
             {
                 arm_ctrl.current_state = ARM_STATE_RESETTING;
-                arm_ctrl.state_timer = systick_get_ms();
             }
             break;
 

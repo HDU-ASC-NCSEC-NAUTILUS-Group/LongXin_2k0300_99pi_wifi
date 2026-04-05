@@ -42,12 +42,10 @@ timer_fd *pit_timer;
 
 float roll, pitch, yaw;
 
-int32_t time_number = 0;
-
 // 里面放入中断代码
 void pit_callback()
 {
-    time_number ++;
+    
 }
 
 void sigint_handler(int signum) 
