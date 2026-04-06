@@ -6,9 +6,10 @@
 
 
 // DIR
-#define MOTOR1_DIR              "/dev/zf_driver_gpio_motor_1" // P73
-#define MOTOR2_DIR              "/dev/zf_driver_gpio_motor_2" // P72
-#define MOTOR3_DIR              "/dev/zf_driver_gpio_motor_3" // P88
+// 设备树引脚标注有误，手动调整吧
+#define MOTOR2_DIR              "/dev/zf_driver_gpio_motor_1" // P73
+#define MOTOR3_DIR              "/dev/zf_driver_gpio_motor_2" // P72
+#define MOTOR1_DIR              "/dev/zf_driver_gpio_motor_3" // P88
 #define MOTOR4_DIR              "/dev/zf_driver_gpio_motor_4" // P89
 // PWM
 #define MOTOR1_PWM              "/dev/zf_device_pwm_motor_1"

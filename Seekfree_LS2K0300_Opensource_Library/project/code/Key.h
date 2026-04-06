@@ -22,7 +22,7 @@
 所以此处的各个时间阈值最好都设置为10ms的倍数
 所以即使设定时间为55ms，但实际却会是60ms
 */
-#define KEY_Time_DOUBLE 		20
+#define KEY_Time_DOUBLE 		0
 #define KEY_Time_LONG			200
 #define KEY_Time_REPEAT			100
 

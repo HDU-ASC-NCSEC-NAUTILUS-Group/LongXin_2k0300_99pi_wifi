@@ -181,6 +181,7 @@ int Debug_Page_Menu(void)
     }
 }
 
+
 //	####   #   #  #####
 //	#   #  #   #     #  
 //	####   #   #    #  
@@ -220,6 +221,7 @@ int Debug_BUZ(void)
     }
 }
 
+
 // #   #   ###   #####   ###   #####  ####   
 // ## ##  #   #    #    #   #    #    #   #  
 // # # #  #   #    #    #   #    #    ####   
@@ -237,12 +239,15 @@ int Debug_MOTOR(void)
     Debug_MOTOR_UI();
     ips200_show_string(0  ,32 , ">");
 
-    int16_t DUTY[4] = {0,0,0,0};
+    // 出于特殊的设置，此处独立了速度的方向和大小的存储
+    // 建议认定速度为0时方向为1
+    uint16_t DUTY[4] = {0,0,0,0};
+    int8_t DIR[4] = {1,1,1,1};
 
-    ips200_Printf(50 ,32 , "%d    ", DUTY[0]); 
-    ips200_Printf(50 ,48 , "%d    ", DUTY[1]); 
-    ips200_Printf(50 ,64 , "%d    ", DUTY[2]); 
-    ips200_Printf(50 ,80 , "%d    ", DUTY[3]); 
+    ips200_Printf(50 ,32 , "%d   ", DUTY[0] * DIR[0]);
+    ips200_Printf(50 ,48 , "%d   ", DUTY[1] * DIR[1]);
+    ips200_Printf(50 ,64 , "%d   ", DUTY[2] * DIR[2]);
+    ips200_Printf(50 ,80 , "%d   ", DUTY[3] * DIR[3]);
     // 电机位号对应示意图
     // #1 [][][] 3#
     // #1 [][][] 3#
@@ -262,15 +267,20 @@ int Debug_MOTOR(void)
     speed1 = (int16)encoder_quad_get_count(ENCODER_QUAD_1);
     speed2 = (int16)encoder_quad_get_count(ENCODER_QUAD_2);
 
+    // 确保重置
+    Motor_Reset_ALL();
+
     while(1)
     {
         // 上/下按键是否被按下过
         uint8_t key_pressed = 0;
 
+        /*======================================================*/
+		/*[按键处理]**********************************************/
+		/*======================================================*/
         // 选择模式（无选中目标）
         if (Debug_MOTOR_flag_temp == 0)
-        {              
-            /* 按键处理*/       
+        {                   
             if (Key_Check(KEY_NAME_UP,KEY_SINGLE)) 
             {
                 Debug_MOTOR_flag --;
@@ -290,11 +300,11 @@ int Debug_MOTOR(void)
             else if (Key_Check(KEY_NAME_BACK,KEY_SINGLE))
             {
                 // 返回上一级界面
+                Motor_Reset_ALL();
                 return 0;   
             }
 
-
-            /* 光标变化*/
+            // 光标更新
             if (Debug_MOTOR_flag_temp != 0)
             {
                 ips200_show_string(0  ,16 + Debug_MOTOR_flag * 16, "=");
@@ -302,34 +312,79 @@ int Debug_MOTOR(void)
         }
         // 更改模式（有选中目标）
         else if (Debug_MOTOR_flag_temp != 0)
-        {
-            /* 按键处理*/       
+        {   
             if (Key_Check(KEY_NAME_UP,KEY_SINGLE)) 
             {
                 key_pressed = 2;
-                DUTY[Debug_MOTOR_flag_temp - 1] += 5;
-                if (DUTY[Debug_MOTOR_flag_temp - 1] >  100)
+
+                // 中间计算变量temp
+                int16_t temp = DIR[Debug_MOTOR_flag_temp - 1] * DUTY[Debug_MOTOR_flag_temp - 1];
+                temp += 5;
+                // 边界处理
+                if (temp > 100)
                 {
-                    DUTY[Debug_MOTOR_flag_temp - 1] =  100;
+                    temp = 100;
                 }
-                Motor_Set(Debug_MOTOR_flag_temp, DUTY[Debug_MOTOR_flag_temp - 1]);                         
+                else if (temp < -100)
+                {
+                    temp = -100;
+                }
+
+                // 速度方向和大小数据更新
+                // 建议认定速度为0时方向为1
+                if (temp >= 0)
+                {
+                    DIR[Debug_MOTOR_flag_temp - 1] = 1;
+                }
+                else
+                {
+                    DIR[Debug_MOTOR_flag_temp - 1] = -1;
+                }
+                DUTY[Debug_MOTOR_flag_temp - 1] = temp * DIR[Debug_MOTOR_flag_temp - 1];
+
+                Motor_Set(Debug_MOTOR_flag_temp, DUTY[Debug_MOTOR_flag_temp - 1] * DIR[Debug_MOTOR_flag_temp - 1]);                         
             }
             else if (Key_Check(KEY_NAME_DOWN,KEY_SINGLE)) 
             {
                 key_pressed = 2;
-                DUTY[Debug_MOTOR_flag_temp - 1] -= 5;
-                if (DUTY[Debug_MOTOR_flag_temp - 1] < -100)
+
+                // 中间计算变量temp
+                int16_t temp = DIR[Debug_MOTOR_flag_temp - 1] * DUTY[Debug_MOTOR_flag_temp - 1];
+                temp -= 5;
+                // 边界处理
+                if (temp > 100)
                 {
-                    DUTY[Debug_MOTOR_flag_temp - 1] = -100;
+                    temp = 100;
                 }
-                Motor_Set(Debug_MOTOR_flag_temp, DUTY[Debug_MOTOR_flag_temp - 1]);
+                else if (temp < -100)
+                {
+                    temp = -100;
+                }
+
+                // 速度方向和大小数据更新
+                // 建议认定速度为0时方向为1
+                if (temp >= 0)
+                {
+                    DIR[Debug_MOTOR_flag_temp - 1] = 1;
+                }
+                else
+                {
+                    DIR[Debug_MOTOR_flag_temp - 1] = -1;
+                }
+                DUTY[Debug_MOTOR_flag_temp - 1] = temp * DIR[Debug_MOTOR_flag_temp - 1];
+
+                Motor_Set(Debug_MOTOR_flag_temp, DUTY[Debug_MOTOR_flag_temp - 1] * DIR[Debug_MOTOR_flag_temp - 1]);
             }
             else if ((Key_Check(KEY_NAME_CONFIRM,KEY_SINGLE)) || (Key_Check(KEY_NAME_BACK,KEY_SINGLE)))
             {
+                // 光标更新
                 ips200_show_string(0  ,16 + Debug_MOTOR_flag * 16, ">");
                 Debug_MOTOR_flag_temp = 0;
             }
         }
+        /*======================================================*/
+		/**********************************************[按键处理]*/
+		/*======================================================*/
 
 
         /* 编码器数据更新*/
@@ -340,11 +395,11 @@ int Debug_MOTOR(void)
             speed2 = (int16)encoder_quad_get_count(ENCODER_QUAD_2);
             sum1 += speed1;
             sum2 += speed2;
-            ips200_Printf(170 ,32 , "%d  ", speed1); 
-            ips200_Printf(170 ,48 , "%d  ", speed2);
-            
-            ips200_Printf(170 ,112 , "%d  ", sum1);
-            ips200_Printf(50 ,112 , "%d  ", sum2);
+
+            ips200_Printf(170,48 , "%d  ", speed1); 
+            ips200_Printf(170,80 , "%d  ", speed2);      
+            ips200_Printf(170,112, "%d  ", sum1);
+            ips200_Printf(50 ,112, "%d  ", sum2);
         }
 
 
@@ -358,10 +413,10 @@ int Debug_MOTOR(void)
                 case 3:DUTY[1] = DUTY[2];break;
                 case 4:DUTY[0] = DUTY[3];break;
             }
-            ips200_Printf(50 ,32 , "%d    ", DUTY[0]); 
-            ips200_Printf(50 ,48 , "%d    ", DUTY[1]); 
-            ips200_Printf(50 ,64 , "%d    ", DUTY[2]); 
-            ips200_Printf(50 ,80 , "%d    ", DUTY[3]); 
+            ips200_Printf(50 ,32 , "%d   ", DUTY[0] * DIR[0]); 
+            ips200_Printf(50 ,48 , "%d   ", DUTY[1] * DIR[1]); 
+            ips200_Printf(50 ,64 , "%d   ", DUTY[2] * DIR[2]); 
+            ips200_Printf(50 ,80 , "%d   ", DUTY[3] * DIR[3]); 
         }
 
 
@@ -377,6 +432,7 @@ int Debug_MOTOR(void)
         }
     }
 }
+
 
 // #####  #   #  #   #  #####  #####  #####  ####    ###   
 //   #    ## ##  #   #  #   #  #          #  #   #  #   #  
