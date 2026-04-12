@@ -44,17 +44,21 @@ volatile uint8_t imu_stable = 0;
 /*[S] 通用工具函数 [S]--------------------------------------------------------------------------------------------*/
 /*******************************************************************************************************************/
 
+#if IMU_ANALYSIS_MODE > 0 || YAW_ONLY_ANALYSIS_MODE > 0
 static float invSqrt(float x)
 {
     float halfx = 0.5f * x;
     float y = x;
-    long i = *(long *)&y;
-    i = 0x5f3759df - (i >> 1);
-    y = *(float *)&i;
+    union { float f; uint32_t i; } converter;
+    converter.f = y;
+    converter.i = 0x5f3759df - (converter.i >> 1);
+    y = converter.f;
     y = y * (1.5f - (halfx * y * y));
     return y;
 }
+#endif
 
+#if IMU_ANALYSIS_MODE > 0 || YAW_ONLY_ANALYSIS_MODE > 0
 static float wrap_angle_deg(float angle)
 {
     while (angle > 180.0f)
@@ -67,6 +71,7 @@ static float wrap_angle_deg(float angle)
     }
     return angle;
 }
+#endif
 
 #if YAW_ONLY_ANALYSIS_MODE > 0
 static void gyro_data_process(float *gx, float *gy, float *gz)
@@ -1119,7 +1124,6 @@ static float TiltMagYaw_Update(float dt)
 
     float gx, gy, gz;
     float ax, ay, az;
-    float mx, my, mz;
     float yaw_deg;
     float kp, ki;
 
@@ -1140,7 +1144,6 @@ static float TiltMagYaw_Update(float dt)
 
     float acc_norm = sqrtf(ax * ax + ay * ay + az * az);
     float mag_norm = sqrtf(mx * mx + my * my + mz * mz);
-    float norm;
     float cos_roll, sin_roll, cos_pitch, sin_pitch;
     float mx_level, my_level;
     float yaw_mag;
@@ -1504,7 +1507,7 @@ static void NineAxis_Update(void)
 void IMU_Update_Analysis(void)
 {
     #if YAW_ONLY_ANALYSIS_MODE > 0
-        #if YAW_ONLY_ANALYSIS_MODE == 1
+        #if YAW_ONLY_ANALYSIS_MODE == 1 
             Yaw_Result = Mag_Get_Yaw_Update();
             Roll_Result = 0.0f;
             Pitch_Result = 0.0f;
@@ -1521,6 +1524,7 @@ void IMU_Update_Analysis(void)
             Roll_Result = 0.0f;
             Pitch_Result = 0.0f;
         #endif
+
     #elif IMU_ANALYSIS_MODE == 3
         ThreeAxis_Update();
     #elif IMU_ANALYSIS_MODE == 6

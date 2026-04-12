@@ -10,19 +10,27 @@
 #define __IMU_ANALYSIS_H__
 
 
-// IMU_解算模式设置（全欧拉角解算）
-// 0 关闭
-// 3 三轴
-// 6 六轴
-// 9 九轴
-#define IMU_ANALYSIS_MODE             0
+// YAW_ONLY_ANALYSIS_MODE和IMU_ANALYSIS_MODE是互斥的，不能同时开启
+// 仅Yaw输出的解算方法设置优先级高，会覆盖IMU_ANALYSIS_MODE的设置
+
 // 仅Yaw输出的解算方法设置
 // 0 关闭
 // 1 Mag_Get_Yaw（仅磁力计+倾斜补偿）
 // 2 Mahony AHRS（九轴，仅输出Yaw）
 // 3 Madgwick AHRS（九轴，仅输出Yaw）
 // 4 TiltMagYaw（重力投影磁修正陀螺积分）
-#define YAW_ONLY_ANALYSIS_MODE        0
+#define YAW_ONLY_ANALYSIS_MODE        2
+
+// IMU_解算模式设置（全欧拉角解算）
+// 0 关闭
+// 3 三轴
+// 6 六轴
+// 9 九轴
+#define IMU_ANALYSIS_MODE             0
+
+// YAW_ONLY_ANALYSIS_MODE和IMU_ANALYSIS_MODE是互斥的，不能同时开启
+// 仅Yaw输出的解算方法设置优先级高，会覆盖IMU_ANALYSIS_MODE的设置
+
 
 // 采样周期设置
 #define DELTA_T_3AXIS                   0.001f  // 三轴采样周期
@@ -42,6 +50,7 @@ extern volatile float Roll_Result;   // 横滚角（Roll）
 extern volatile float Pitch_Result;  // 俯仰角（Pitch）
 // IMU 通信+解析 使能标志位
 extern volatile uint8_t IMU_D_and_A_Enable;
+
 // IMU快速收敛相关
 extern volatile uint8_t imu_quick_count;
 extern volatile uint8_t imu_stable;
