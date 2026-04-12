@@ -567,24 +567,7 @@ int Debug_IMU963RA(void)
             }
 
             if (Time_200ms_Flag)
-            {
-                #if   IMU_ANALYSIS_MODE == 3 // 三轴
-                    IMU_Gyro_Apply(&gyro_cal, &gx, &gy, &gz);
-
-                    ips200_Printf(24 ,96 , "%.1f ", gx);
-                    ips200_Printf(104,96 , "%.1f ", gy);
-                    ips200_Printf(184,96 , "%.1f ", gz);
-                #elif IMU_ANALYSIS_MODE == 6 // 六轴
-                    IMU_Acc_Apply(&ax, &ay, &az);   
-                    IMU_Gyro_Apply(&gyro_cal, &gx, &gy, &gz);
-
-                    ips200_Printf(24 ,80 , "%d ", ax);
-                    ips200_Printf(104,80 , "%d ", ay);
-                    ips200_Printf(184,80 , "%d ", az);
-                    ips200_Printf(24 ,96 , "%.1f ", gx);
-                    ips200_Printf(104,96 , "%.1f ", gy);
-                    ips200_Printf(184,96 , "%.1f ", gz);
-                #elif IMU_ANALYSIS_MODE == 9 // 九轴      
+            {   
                     IMU_Acc_Apply(&ax, &ay, &az);            
                     IMU_Gyro_Apply(&gyro_cal, &gx, &gy, &gz);
                     IMU_Mag_Apply(&mag_cal, &mx, &my, &mz);
