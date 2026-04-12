@@ -90,11 +90,11 @@ void Menu_Show(void)
         {
             menu_flag_temp = menu_flag;
         }
-//        else if (Key_Check(KEY_NAME_BACK,KEY_SINGLE))
-//        {
-//            // 返回上一级界面
-//            return 0;   
-//        }
+        // else if (Key_Check(KEY_NAME_BACK,KEY_SINGLE))
+        // {
+        // // 返回上一级界面
+        // return 0;   
+        // }
 
 
         /* 模式跳转*/

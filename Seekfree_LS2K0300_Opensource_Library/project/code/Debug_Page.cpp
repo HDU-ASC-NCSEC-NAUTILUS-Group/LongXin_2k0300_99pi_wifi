@@ -3,6 +3,8 @@
 ********************************************************************************************************************/
 #include "zf_common_headfile.h"
 #include "zf_driver_encoder.h"
+#include "zf_device_imu963ra.h"
+#include "zf_driver_file.h"
 
 #include "defines.h"
 #include "IMU_Analysis.h"
@@ -23,11 +25,11 @@ void Debug_Page_Menu_UI(uint8_t Page)
 	{
 		// 第一页
 		case 1:
-			ips200_show_string(8  , 0  , "[Debug]");
-			ips200_show_string(0  , 16 , "==============================");
-			ips200_show_string(10 , 32 , "BUZ");
-            ips200_show_string(10 , 48 , "MOTOR");
-            ips200_show_string(10 , 64 , "IMU963RA");
+			ips200_show_string(8  ,0  , "[Debug]");
+			ips200_show_string(0  ,16 , "==============================");
+			ips200_show_string(10 ,32 , "BUZ");
+            ips200_show_string(10 ,48 , "MOTOR");
+            ips200_show_string(10 ,64 , "IMU963RA");
 		
 			break;
 	}
@@ -36,9 +38,9 @@ void Debug_Page_Menu_UI(uint8_t Page)
 // [三级界面]蜂鸣器调试界面
 void Debug_BUZ_UI(void)
 {
-    ips200_show_string(8  , 0  , "[DEBUG]-BUZ");
-    ips200_show_string(0  , 16 , "==============================");
-    ips200_show_string(10 , 32 , "OFF");
+    ips200_show_string(8  ,0  , "[DEBUG]-BUZ");
+    ips200_show_string(0  ,16 , "==============================");
+    ips200_show_string(10 ,32 , "OFF");
 }
 
 // [三级界面]电机调试界面
@@ -57,13 +59,24 @@ void Debug_MOTOR_UI(void)
 // [三级界面]IMU963RA调试界面
 void Debug_IMU963RA_UI(void)
 {
-    ips200_show_string(8  , 0  , "[DEBUG]-IMU963RA");
-    ips200_show_string(0  , 16 , "==============================");
-    ips200_show_string(0  , 32 , "Cali:####");
-    ips200_show_string(0  , 48 , "ax:       ay:       az:       ");
-    ips200_show_string(0  , 64 , "gx:       gy:       gz:       ");
-    ips200_show_string(0  , 80 , "mx:       my:       mz:       ");
-    ips200_show_string(0  , 96 , "Ro:       Ya:       Pi:       ");
+    ips200_show_string(8  ,0  , "[DEBUG]-IMU963RA");
+    ips200_show_string(0  ,16 , "==============================");
+    ips200_show_string(0  ,32 , "Cali:[GYRO]IDLE  [MAGN]IDLE");
+    ips200_show_string(0  ,48 , "Mode:####");
+
+    ips200_show_string(0  ,80 , "ax:#      ay:#      az:#      ");
+    ips200_show_string(0  ,96 , "gx:#      gy:#      gz:#      ");
+    ips200_show_string(0  ,112, "mx:#      my:#      mz:#      ");
+    
+    ips200_show_string(0  ,144, "Ro:#      Ya:#      Pi:#      ");
+
+    #if   IMU_ANALYSIS_MODE == 3
+        ips200_show_string(40 ,48 , "3Axis");
+    #elif IMU_ANALYSIS_MODE == 6
+        ips200_show_string(40 ,48 , "6Axis");
+    #elif IMU_ANALYSIS_MODE == 9
+        ips200_show_string(40 ,48 , "9Axis");
+    #endif
 }
 /*******************************************************************************************************************/
 /*--------------------------------------------------------------------------------------------------[E] 菜单样式 [E]*/
@@ -204,13 +217,13 @@ int Debug_BUZ(void)
             {
                 // 开启蜂鸣器
                 gpio_set_level(BEEP_DEFINE, 0x1);
-                ips200_show_string(10 , 32 , "ON ");
+                ips200_show_string(10 ,32 , "ON ");
             }
             else
             {
                 // 关闭蜂鸣器
                 gpio_set_level(BEEP_DEFINE, 0x0);
-                ips200_show_string(10 , 32 , "OFF");
+                ips200_show_string(10 ,32 , "OFF");
             }
         }
         else if (Key_Check(KEY_NAME_BACK,KEY_SINGLE))
@@ -445,111 +458,140 @@ int Debug_IMU963RA(void)
 {
     Debug_IMU963RA_UI();
     
+    // 干脆总是存在一个没有校准陀螺仪就校准陀螺仪的设定
+
     /* 半阻塞式IMU963RA零飘此时请保持静此时请保持静止)*/
-	if (IMU963RA_Calibration_Check() != 2)// 如果未校准
+	if (IMU_Gyro_Calib_Check(&gyro_cal) != GYRO_CALIB_STATE_DONE)// 如果未校准
 	{
-        ips200_show_string(40 , 32 , "ING~");
-	    IMU963RA_Calibration_Start();
+        ips200_show_string(40 ,32 , "#GYRO#ING~");
+	    IMU_Gyro_Calib_Start(&gyro_cal);
 	}
 	// 半阻塞式零飘校准
 	while(1)
     {
-        if (IMU963RA_Calibration_Check() == 2)  // 零飘校准完成
+        if (IMU_Gyro_Calib_Check(&gyro_cal) == GYRO_CALIB_STATE_DONE)  // 零飘校准完成
         {
+            ips200_show_string(40 ,32 , "#GYRO#DONE");
             break;  // 结束零飘校准
-        }      
-        // 可以考虑在这里操作OLED，但请注意OLED对时间的占用
-        
-        // 强制零飘校准退出
-        if (Key_Check(KEY_NAME_BACK,KEY_SINGLE)) 
+        }             
+        if (Key_Check(KEY_NAME_BACK,KEY_SINGLE)) // 强制零飘校准退出
         {
+            ips200_show_string(40 ,32 , "#GYRO#STOP");
             break;  // 中止零飘校准
         }        
     }
-    ips200_show_string(40 , 32 , "DONE");
 
+    // 仅仅作为显示变量，不用于计算
+    float ax = 0,ay = 0,az = 0;
+    float gx = 0,gy = 0,gz = 0;
+    int16_t mx = 0,my = 0,mz = 0;
 
-    float ax = 0.0f;
-    float ay = 0.0f;
-    float az = 0.0f;
-    float gx = 0.0f;
-    float gy = 0.0f;
-    float gz = 0.0f;
-#if (IMU_ANALYSIS_USE_MAG == 1)
-    float mx = 0.0f;
-    float my = 0.0f;
-    float mz = 0.0f;
-#endif
+    // 区分选择校准陀螺仪还是磁力计
+    // 0：校准陀螺仪
+    // 1：校准磁力计
+    uint8_t Debug_IMU963RA_flag = 0;
 
     while(1)
     {
-        /* 按键处理*/       
-//            if (Key_Check(KEY_NAME_UP,KEY_SINGLE)) 
-//            {
-//            }
-//            else if (Key_Check(KEY_NAME_DOWN,KEY_SINGLE)) 
-//            {
-//            }
-//            else 
-            if (Key_Check(KEY_NAME_CONFIRM,KEY_SINGLE))
+        /* 按键处理*/      
+        if (Key_Check(KEY_NAME_UP,KEY_SINGLE)) 
+        {
+            // 选中对为陀螺仪校准
+            Debug_IMU963RA_flag = 0;
+            ips200_show_string(40 ,32 , "#GYRO#");
+            ips200_show_string(136,32 , "[MAGN]");
+        }
+        else if (Key_Check(KEY_NAME_DOWN,KEY_SINGLE)) 
+        {
+            // 选中对为磁力计校准
+            Debug_IMU963RA_flag = 1;
+            ips200_show_string(40 ,32 , "[GYRO]");
+            ips200_show_string(136,32 , "#MAGN#");
+        }
+        else if (Key_Check(KEY_NAME_CONFIRM,KEY_SINGLE))
+        {
+            // 开启校准
+            if (Debug_IMU963RA_flag == 0) // 校准陀螺仪
             {
-                // 再次开启校准
-                IMU963RA_Calibration_Start();
-                ips200_show_string(40 , 32 , "ING~");
+                IMU_Gyro_Calib_Start(&gyro_cal);
+                ips200_show_string(40 ,32 , "#GYRO#ING~");
                 // 半阻塞式零飘校准
                 while(1)
                 {
-                    if (IMU963RA_Calibration_Check() == 2)  // 零飘校准完成
+                    if (IMU_Gyro_Calib_Check(&gyro_cal) == GYRO_CALIB_STATE_DONE)  // 零飘校准完成
                     {
+                        ips200_show_string(40 ,32 , "#GYRO#DONE");
                         break;  // 结束零飘校准
-                    }      
-                    // 可以考虑在这里操作OLED，但请注意OLED对时间的占用
-                    
-                    // 强制零飘校准退出
-                    if (Key_Check(KEY_NAME_BACK,KEY_SINGLE)) 
+                    }                                                             
+                    if (Key_Check(KEY_NAME_BACK,KEY_SINGLE)) // 强制零飘校准退出
                     {
+                        ips200_show_string(40 ,32 , "#GYRO#STOP");
                         break;  // 中止零飘校准
                     }        
                 }
-                IMU963RA_Reset_Yaw();
-                Debug_IMU963RA_UI();
-                ips200_show_string(40 , 32 , "DONE");
+                IMU_Reset_Data();
+                
             }
-            else if (Key_Check(KEY_NAME_BACK,KEY_SINGLE))
-            {
-                // 返回上一级界面
-                return 0;   
-            }
+            else // 校准磁力计
+            {                   
+                IMU_Mag_Calib_Start(&mag_cal);
+                ips200_show_string(136 ,32 , "#MAGN#ING~");
+                // 半阻塞式零飘校准
+                while(1)
+                {
+                    if (IMU_Mag_Calib_Check(&mag_cal) == MAG_CALIB_STATE_DONE)  // 零飘校准完成
+                    {
+                        ips200_show_string(136,32 , "#MAGN#DONE"); 
+                        break;  // 结束零飘校准
+                    }                                   
+                    if (Key_Check(KEY_NAME_BACK,KEY_SINGLE)) // 强制零飘校准退出
+                    {
+                        ips200_show_string(136,32 , "#MAGN#STOP"); 
+                        break;  // 中止零飘校准
+                    }
+                }
+                IMU_Reset_Data();
+                     
+            }           
+        }
+        else if (Key_Check(KEY_NAME_BACK,KEY_SINGLE))
+        {
+            // 返回上一级界面
+            return 0;   
+        }
 
-            if (IMU963RA_analysis_enable)
-            {
-                imu963ra_update_data();
-                IMU963RA_Analysis_Update();
-                IMU963RA_analysis_enable = 0;
-            #if (IMU_ANALYSIS_USE_MAG == 1)
-                IMU963RA_Get_Calibrated_Data(&ax, &ay, &az, &gx, &gy, &gz, &mx, &my, &mz);
-            #else
-                IMU963RA_Get_Calibrated_Data(&ax, &ay, &az, &gx, &gy, &gz);
-            #endif
-            }
+
+        /* IMU数据更新*/
+        if (IMU_D_and_A_Enable)
+        {
+            IMU_Update_Data();
+            IMU_Update_Analysis();
+            IMU_D_and_A_Enable = 0;
+        }
 
 
+        /* 显示更新*/
+        if (Time_200ms_Flag)
+        {   
+                IMU_Acc_Apply(&ax, &ay, &az);            
+                IMU_Gyro_Apply(&gyro_cal, &gx, &gy, &gz);
+                IMU_Mag_Apply(&mag_cal, &mx, &my, &mz);
+            
+                ips200_Printf(24 ,80 , "%.0f ", ax);
+                ips200_Printf(104,80 , "%.0f ", ay);
+                ips200_Printf(184,80 , "%.0f ", az);
+                ips200_Printf(24 ,96 , "%.1f ", gx);
+                ips200_Printf(104,96 , "%.1f ", gy);
+                ips200_Printf(184,96 , "%.1f ", gz);
+                ips200_Printf(24 ,112, "%d ", mx);
+                ips200_Printf(104,112, "%d ", my);
+                ips200_Printf(184,112, "%d ", mz);
 
-//            ips200_Printf(24 ,48 , "%.0f ", ax);
-//            ips200_Printf(104,48 , "%.0f ", ay);
-//            ips200_Printf(184,48 , "%.0f ", az);
-//            ips200_Printf(24 ,64 , "%.1f ", gx);
-//            ips200_Printf(104,64 , "%.1f ", gy);
-//            ips200_Printf(184,64 , "%.1f ", gz);
-#if (IMU_ANALYSIS_USE_MAG == 1)
-            ips200_Printf(24 ,80 , "%.1f ", mx);
-            ips200_Printf(104,80 , "%.1f ", my);
-            ips200_Printf(184,80 , "%.1f ", mz);
-#endif
-            ips200_Printf(24 ,96 , "%.1f ", Roll_Result);
-            ips200_Printf(104,96 , "%.1f ", Yaw_Result);
-            ips200_Printf(184,96 , "%.1f ", Pitch_Result);
-        
+            Time_200ms_Flag = 0;
+        }
+        ips200_Printf(24 ,144, "%.1f ", Roll_Result);
+        ips200_Printf(104,144, "%.1f ", Yaw_Result);
+        ips200_Printf(184,144, "%.1f ", Pitch_Result);
     }
 }
 /*******************************************************************************************************************/

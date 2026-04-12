@@ -1,74 +1,111 @@
 /********************************************************************************************************************
-* IMU姿态解算
+* 文件名称     IMU_Analysis.cpp
+* 功能描述     IMU姿态解算和校准模块
+* 使用说明     1. 支持三轴/六轴/九轴模式，通过 IMU_ANALYSIS_MODE 宏选择
+*              2. 陀螺仪校准：采集静止时的数据，计算零偏
+*              3. 磁力计校准：支持Min-Max法和椭球拟合法，旋转设备采集数据
+*              4. 磁力计校准方法通过 MAG_CALIB_METHOD 宏选择（1:Min-Max, 2:椭球拟合）
 ********************************************************************************************************************/
 #include "zf_device_imu963ra.h"
 #include "zf_driver_file.h"
 
 #include "IMU_Analysis.h"
-#include "MahonyAHRS.h"
 #include <math.h>
 #include <chrono>
 
+
+
+
+
+
+/*******************************************************************************************************************/
+/*[S] 通用全局变量 [S]-----------------------------------------------------------------------------------------------*/
+/*******************************************************************************************************************/
 
 // 全局变量
 volatile float Yaw_Result = 0.0f;    // 偏航角（Yaw）
 volatile float Roll_Result = 0.0f;   // 横滚角（Roll）
 volatile float Pitch_Result = 0.0f;  // 俯仰角（Pitch）
-// IMU963RA 数据采集和分析使能标志位
-volatile uint8_t IMU963RA_analysis_enable = 0;
-
-// 坐标系配置：根据您的IMU安装方向调整
-// 1 = 正常方向，-1 = 反方向
-// 加速度计的坐标系
-#define IMU_ACC_X_SIGN  1
-#define IMU_ACC_Y_SIGN  1
-#define IMU_ACC_Z_SIGN  -1  // Z轴取反，因为重力方向是-Z
-
-// 陀螺仪的坐标系（可能需要单独调整）
-#define IMU_GYRO_X_SIGN  1
-#define IMU_GYRO_Y_SIGN  1
-#define IMU_GYRO_Z_SIGN  -1
-
-// 磁力计的坐标系（可能需要单独调整）
-#define IMU_MAG_X_SIGN   1
-#define IMU_MAG_Y_SIGN   1
-#define IMU_MAG_Z_SIGN   1
-
-// 磁力计轴旋转配置
-// 0: 不旋转
-// 1: 顺时针旋转 90 度
-// 2: 顺时针旋转 180 度
-// 3: 顺时针旋转 270 度
-#define IMU_MAG_AXIS_ROTATE  3
-
-
-// 硬编码的IMU963RA参数
-// 陀螺仪：±2000°/s, 16-bit
-static float imu_gyro_scale = (2000.0f / 32768.0f) * (M_PI / 180.0f);     // 陀螺仪scale (rad/s per LSB)
-
-
-// 零飘校准校准需要的样本数
-#define CALIB_TARGET_SAMPLES    800  
-// 枚举定义校准状态
-typedef enum {
-    CALIB_STATE_SPARE   = 0,          // 未开始
-    CALIB_STATE_RUNNING = 1,          // 校准中
-    CALIB_STATE_DONE    = 2           // 已校准
-} CalibState_t;
-static CalibState_t calib_state = CALIB_STATE_SPARE; // 当前校准状态
-static uint16_t calib_count = 0;// 已收集样本数量
+// IMU 数据采集和分析使能标志位
+volatile uint8_t IMU_D_and_A_Enable = 0;
+// IMU快速收敛相关
+volatile uint8_t imu_quick_count = 0;
+volatile uint8_t imu_stable = 0;
+/*******************************************************************************************************************/
+/*-----------------------------------------------------------------------------------------------[E] 通用全局变量 [E]*/
+/*******************************************************************************************************************/
 
 
 
 
 
 
-// 选择九轴数据的解算
-#if (IMU_ANALYSIS_USE_MAG == 1)
+/*******************************************************************************************************************/
+/*[S] 通用工具函数 [S]--------------------------------------------------------------------------------------------*/
+/*******************************************************************************************************************/
+
+#if IMU_ANALYSIS_MODE > 0 || YAW_ONLY_ANALYSIS_MODE > 0
+static float invSqrt(float x)
+{
+    float halfx = 0.5f * x;
+    float y = x;
+    union { float f; uint32_t i; } converter;
+    converter.f = y;
+    converter.i = 0x5f3759df - (converter.i >> 1);
+    y = converter.f;
+    y = y * (1.5f - (halfx * y * y));
+    return y;
+}
+#endif
+
+#if IMU_ANALYSIS_MODE > 0 || YAW_ONLY_ANALYSIS_MODE > 0
+static float wrap_angle_deg(float angle)
+{
+    while (angle > 180.0f)
+    {
+        angle -= 360.0f;
+    }
+    while (angle < -180.0f)
+    {
+        angle += 360.0f;
+    }
+    return angle;
+}
+#endif
+
+#if YAW_ONLY_ANALYSIS_MODE > 0
+static void gyro_data_process(float *gx, float *gy, float *gz)
+{
+    float gx_temp = (float)imu963ra_gyro_x - gyro_cal.offset_x;
+    float gy_temp = (float)imu963ra_gyro_y - gyro_cal.offset_y;
+    float gz_temp = (float)imu963ra_gyro_z - gyro_cal.offset_z;
+
+    if (gx_temp < 7.0f && gx_temp > -7.0f) gx_temp = 0.0f;
+    if (gy_temp < 7.0f && gy_temp > -7.0f) gy_temp = 0.0f;
+    if (gz_temp < 7.0f && gz_temp > -7.0f) gz_temp = 0.0f;
+
+    *gx = (float)(gx_temp / 10.0f * 10.0f) * PI / 180.0f;
+    *gy = (float)(gy_temp / 10.0f * 10.0f) * PI / 180.0f;
+    *gz = (float)(gz_temp / 10.0f * 10.0f) * PI / 180.0f;
+}
+#endif
+
+/*******************************************************************************************************************/
+/*--------------------------------------------------------------------------------------------[E] 通用工具函数 [E]*/
+/*******************************************************************************************************************/
+
+
+
+
+
+
+/*******************************************************************************************************************/
+/*[S] 读取数据 [S]--------------------------------------------------------------------------------------------------*/
+/*******************************************************************************************************************/
 
 //-------------------------------------------------------------------------------------------------------------------
-// 函数简介     IMU963RA 获取九轴原始数据
-// 使用示例     imu963ra_get_data();                                              // 执行该函数后，直接查看对应的变量即可
+// 函数简介     IMU 获取原始数据
+// 使用示例     IMU_Update_Data();                                              // 执行该函数后，直接查看对应的变量即可
 // 备注信息     定时器定时中断定时调用该函数，获取 IMU963RA 原始数据
 //-------------------------------------------------------------------------------------------------------------------
 // IMU963RA 原始数据变量
@@ -78,776 +115,1498 @@ static uint16_t calib_count = 0;// 已收集样本数量
 // imu963ra_gyro_x          imu963ra_gyro_y         imu963ra_gyro_z
 // 磁力计原始值
 // imu963ra_mag_x           imu963ra_mag_y          imu963ra_mag_z  
-void imu963ra_update_data(void)
+void IMU_Update_Data(void)
 {
-    imu963ra_get_acc();
-    imu963ra_get_gyro();
-    imu963ra_get_mag();
+        imu963ra_get_acc();
+        imu963ra_get_gyro();
+        imu963ra_get_mag();
+}
+/*******************************************************************************************************************/
+/*--------------------------------------------------------------------------------------------------[E] 读取数据 [E]*/
+/*******************************************************************************************************************/
+
+
+
+
+
+
+
+//-------------------------------------------------------------------------------------------------------------------
+// 函数简介     应用加速度计校准参数
+// 使用示例     IMU_Acc_Apply(&acc_cal, &ax, &ay, &az);
+//-------------------------------------------------------------------------------------------------------------------
+void IMU_Acc_Apply(float *ax, float *ay, float *az)
+{
+    *ax = (float)imu963ra_acc_x;
+    *ay = (float)imu963ra_acc_y;
+    *az = (float)imu963ra_acc_z;
 }
 
-// Madgwick算法相关定义
-#define DEG2RAD (M_PI / 180.0f) // 角度转弧度
-#define RAD2DEG (180.0f / M_PI) // 弧度转角度
 
-// 三轴数据结构体
-typedef struct {
-    float x; // X轴数据
-    float y; // Y轴数据
-    float z; // Z轴数据
-} Axis3f;
 
-// Madgwick算法四元数（表示姿态）
-// q = q1 + q2*i + q3*j + q4*k
-// 初始值：q1=1, q2=0, q3=0, q4=0 表示水平朝北姿态
-static float madgwick_q1 = 1.0f; // 四元数实部
-static float madgwick_q2 = 0.0f; // 四元数虚部
-static float madgwick_q3 = 0.0f; // 四元数虚部
-static float madgwick_q4 = 0.0f; // 四元数k分量
 
-// Madgwick算法增益参数（控制响应速度和稳定性）
-// 推荐值：0.08-0.12（四轮车定角度转向应用）
-// 调整建议：
-//   - 增大（如0.15-0.3）：响应更快，适合快速运动场景
-//   - 减小（如0.05-0.08）：更稳定，适合平稳场景
-static float madgwick_beta = 0.15f;
 
-// 时间戳记录（用于计算dt）
-static std::chrono::steady_clock::time_point last_time_madgwick = std::chrono::steady_clock::now();
+
+/*******************************************************************************************************************/
+/*[S] 陀螺仪校准 [S]------------------------------------------------------------------------------------------------*/
+/*******************************************************************************************************************/
+
+// 定义并初始化陀螺仪校准结构体
+Gyro_Calib_StructDef gyro_cal = {
+    .calib_state = GYRO_CALIB_STATE_IDLE, // 初始化为未校准
+
+    .calib_count = 0,
+    .offset_x = 0.0f,
+    .offset_y = 0.0f,
+    .offset_z = 0.0f,
+    .sum_x = 0.0f,
+    .sum_y = 0.0f,
+    .sum_z = 0.0f,
+};
 
 //-------------------------------------------------------------------------------------------------------------------
-// 函数简介     获取时间间隔（dt）
-// 返回参数     dt：时间间隔（秒），范围[0.001s, 0.05s]
-// 备注信息     用于Madgwick算法的时间积分，限制范围避免异常值
+// 函数简介     陀螺仪开始校准
+// 使用示例     Gyro_Calib_Start(&gyro_cal);
 //-------------------------------------------------------------------------------------------------------------------
-static float Get_dt(void)
+void IMU_Gyro_Calib_Start(Gyro_Calib_StructDef *cal)
 {
-    auto current_time = std::chrono::steady_clock::now();
-    auto time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_time_madgwick).count();
-    float dt = (float)time_diff / 1000.0f;
-    if (dt > 0.05f) dt = 0.05f; // 限制最大dt
-    if (dt < 0.001f) dt = 0.005f; // 限制最小dt
-    last_time_madgwick = current_time;
-    return dt;
-}
+    cal->calib_state = GYRO_CALIB_STATE_RUNNING; // 设置状态为校准中
 
-//-------------------------------------------------------------------------------------------------------------------
-// 函数简介     快速平方根倒数计算（牛顿迭代法）
-// 输入参数     x：输入值
-// 返回参数     1/√x：平方根倒数
-// 备注信息     比标准sqrtf()函数更快，用于向量归一化
-//-------------------------------------------------------------------------------------------------------------------
-static float invSqrt(float x)
-{
-    float halfx = 0.5f * x;
-    union {
-        float f;
-        int32_t i;
-    } conv = {x};
-    conv.i = 0x5f3759df - (conv.i >> 1);
-    conv.f *= 1.5f - halfx * conv.f * conv.f;
-    return conv.f;
+    cal->calib_count = 0;
+    cal->sum_x = 0.0f;
+    cal->sum_y = 0.0f;
+    cal->sum_z = 0.0f;
+    cal->offset_x = 0.0f;
+    cal->offset_y = 0.0f;
+    cal->offset_z = 0.0f;
 }
 
 //-------------------------------------------------------------------------------------------------------------------
-// 函数简介     Madgwick AHRS算法核心函数 
+// 函数简介     陀螺仪校准状态机
+// 返回参数     校准状态：0-未校准，1-校准中，2-已校准
+// 使用示例     Gyro_Calib_Check(&gyro_cal);
+// 使用要求：
+//   - 在静止状态下进行校准，确保设备不受外部运动干扰
+//-------------------------------------------------------------------------------------------------------------------
+int IMU_Gyro_Calib_Check(Gyro_Calib_StructDef *cal)
+{
+    if(cal->calib_state == GYRO_CALIB_STATE_DONE)
+    {
+        return 2; // 校准完
+    }
+
+    if(cal->calib_state == GYRO_CALIB_STATE_IDLE)
+    {
+        return 0; // 未校准
+    }
+    
+    // 那就是状态机还是运行子状态
+    // 检查是否允许收集数据
+    if(IMU_D_and_A_Enable)
+    {
+        IMU_Update_Data();
+        // 收集数据
+        cal->sum_x += (float)imu963ra_gyro_x;
+        cal->sum_y += (float)imu963ra_gyro_y;
+        cal->sum_z += (float)imu963ra_gyro_z;
+
+        cal->calib_count++;
+        IMU_D_and_A_Enable = 0;
+        
+        // 样本数量达成目标
+        if(cal->calib_count >= GYRO_CALIB_TARGET_SAMPLES)
+        {
+            // 计算陀螺仪浮点数偏移量
+            cal->offset_x = (float)cal->sum_x / GYRO_CALIB_TARGET_SAMPLES;
+            cal->offset_y = (float)cal->sum_y / GYRO_CALIB_TARGET_SAMPLES;
+            cal->offset_z = (float)cal->sum_z / GYRO_CALIB_TARGET_SAMPLES;
+            
+            // // 转化为整数偏移量
+            // gyro_off_int[0] = (int16_t)gyro_off_x;    
+            // gyro_off_int[1] = (int16_t)gyro_off_y;
+            // gyro_off_int[2] = (int16_t)gyro_off_z;
+            
+            // 更新陀螺仪校准状态为完成
+            cal->calib_state = GYRO_CALIB_STATE_DONE;
+            
+            printf("GYRO_CAL_OFFSET: X=%.2f, Y=%.2f, Z=%.2f\r\n", cal->offset_x, cal->offset_y, cal->offset_z);
+        }
+    }
+    return 1; // 校准中
+}
+
+//-------------------------------------------------------------------------------------------------------------------
+// 函数简介     应用陀螺仪校准参数
+// 参数说明     cal             陀螺仪校准结构体指针
+// 参数说明     gx              用于存储校准后X轴数据的指针
+// 参数说明     gy              用于存储校准后Y轴数据的指针
+// 参数说明     gz              用于存储校准后Z轴数据的指针
+// 使用示例     float gx, gy, gz;
+// 使用示例     IMU_Gyro_Apply(&gyro_cal, &gx, &gy, &gz);
+// 备注信息     函数内部直接使用全局变量 imu963ra_gyro_x/y/z 获取原始数据
+//              校准完成后，将校准结果存储到传入的指针中
+//              未校准时，直接将原始数据存储到传入的指针中
+//-------------------------------------------------------------------------------------------------------------------
+void IMU_Gyro_Apply(Gyro_Calib_StructDef *cal, float *gx, float *gy, float *gz)
+{
+    // 如果校准完成，应用校准参数
+    if (cal->calib_state == GYRO_CALIB_STATE_DONE)
+    {
+        *gx = (float)imu963ra_gyro_x - cal->offset_x;
+        *gy = (float)imu963ra_gyro_y - cal->offset_y;
+        *gz = (float)imu963ra_gyro_z - cal->offset_z;
+
+        if (-7 <= *gx && *gx <= 7){*gx = 0.0f;}
+        if (-7 <= *gy && *gy <= 7){*gy = 0.0f;}
+        if (-7 <= *gz && *gz <= 7){*gz = 0.0f;}
+    }
+    else
+    {
+        *gx = (float)imu963ra_gyro_x;
+        *gy = (float)imu963ra_gyro_y;
+        *gz = (float)imu963ra_gyro_z;
+    }
+}
+/*******************************************************************************************************************/
+/*------------------------------------------------------------------------------------------------[E] 陀螺仪校准 [E]*/
+/*******************************************************************************************************************/
+
+
+
+
+
+
+/*******************************************************************************************************************/
+/*[S] 磁力计校准 [S]------------------------------------------------------------------------------------------------*/
+/*******************************************************************************************************************/
+
+// 磁力计校准结构体变量
+Mag_Calib_StructDef mag_cal = {
+    .calib_state = MAG_CALIB_STATE_IDLE,
+    .calib_count = 0,
+    .offset_x = 0.0f,    // X轴偏移
+    .offset_y = 0.0f,     // Y轴偏移
+    .offset_z = 0.0f,     // Z轴偏移
+    .scale_x = 1.0f,   // X轴缩放
+    .scale_y = 1.0f,   // Y轴缩放
+    .scale_z = 1.0f,   // Z轴缩放
+    .max_x = -32768,
+    .min_x = 32767,
+    .max_y = -32768,
+    .min_y = 32767,
+    .max_z = -32768,
+    .min_z = 32767,
+};
+
+//-------------------------------------------------------------------------------------------------------------------
+// 函数简介     磁力计校准初始化
+// 使用示例     Mag_Calib_Start(&mag_cal);
+//-------------------------------------------------------------------------------------------------------------------
+void IMU_Mag_Calib_Start(Mag_Calib_StructDef *cal)
+{
+    // 校准状态置为0，表示需要进行校准
+    cal->calib_state = MAG_CALIB_STATE_RUNNING;
+    cal->calib_count = 0;  
+    // 硬铁偏移（中心点）
+    cal->offset_x = 0.0f;     // X轴偏移
+    cal->offset_y = 0.0f;     // Y轴偏移
+    cal->offset_z = 0.0f;     // Z轴偏移    
+    // 软铁缩放因子
+    cal->scale_x = 1.0f;   // X轴缩放
+    cal->scale_y = 1.0f;   // Y轴缩放
+    cal->scale_z = 1.0f;   // Z轴缩放
+    // 初始化最大最小值为当前测量范围
+    cal->max_x = -32768;
+    cal->min_x = 32767;
+    cal->max_y = -32768;
+    cal->min_y = 32767;
+    cal->max_z = -32768;
+    cal->min_z = 32767;
+}
+
+#if MAG_CALIB_METHOD == 1 // 应用Min-Max法
+//-------------------------------------------------------------------------------------------------------------------
+// 函数简介     磁力计校准状态机(Min-Max法)
+// 返回参数     校准状态：0-未校准，1-校准中，2-校准完
+// 使用示例     Mag_Calib_Check(&mag_cal);
 // 算法原理：
-// 1. 使用梯度下降法融合加速度计和磁力计数据
-// 2. 结合陀螺仪数据更新四元数
-// 3. 通过四元数计算欧拉角（Roll、Pitch、Yaw）
-//
-// 输入参数：
-//   acc  - 加速度计数据（m/s²，已归一化）
-//   gyro - 陀螺仪数据（rad/s）
-//   mag  - 磁力计数据（已归一化）
-//   dt   - 时间间隔（秒）
-//
-// 输出结果：
-//   更新全局四元数 madgwick_q1~madgwick_q4
+//   1. 采集各个方向的磁场数据
+//   2. 找到每个轴的最大值和最小值
+//   3. 硬铁偏移 = (最大值 + 最小值) / 2
+//   4. 软铁缩放 = 最大半量程 / 当前轴半量程
+// 
+// 优点：
+//   - 计算简单，速度快
+//   - 内存占用小
+// 缺点：
+//   - 精度相对较低
+//   - 对旋转的均匀性要求较高
+// 
+// 使用要求：
+//   - 找一个远离强磁场干扰的环境（避开电机、磁铁、扬声器等）
+//   - 保持设备稳定，避免剧烈晃动
+//   - 缓慢旋转设备，确保覆盖以下所有方向：
+//     1. 水平旋转：绕垂直轴360度旋转
+//     2. 俯仰旋转：前端上下摆动，覆盖-90°到+90°
+//     3. 横滚旋转：左右倾斜，覆盖-90°到+90°
+//     4. 斜向旋转：进行一些对角线方向的旋转
+//   - 旋转过程持续约20秒，确保采集足够的数据
+//   - 校准完成后，会自动计算并输出校准参数
 //-------------------------------------------------------------------------------------------------------------------
-static void MadgwickQuaternionUpdate(Axis3f acc, Axis3f gyro, Axis3f mag, float dt)
+int IMU_Mag_Calib_Check(Mag_Calib_StructDef *cal)
 {
-    float recipNorm;
-    float s1, s2, s3, s4;
-    float qDot1, qDot2, qDot3, qDot4;
-    float hx, hy;
-    float _2q1mx, _2q1my, _2q1mz, _2q2mx, _2bx, _2bz, _4bx, _4bz, _2q1, _2q2, _2q3, _2q4, _2q1q3, _2q3q4, q1q1, q1q2, q1q3, q1q4, q2q2, q2q3, q2q4, q3q3, q3q4, q4q4;
+    if(cal->calib_state == MAG_CALIB_STATE_DONE)
+    {
+        return 2; // 校准完
+    }
 
-    float ax = acc.x;
-    float ay = acc.y;
-    float az = acc.z;
-    float gx = gyro.x;
-    float gy = gyro.y;
-    float gz = gyro.z;
-    float mx = mag.x;
-    float my = mag.y;
-    float mz = mag.z;
+    if(cal->calib_state == MAG_CALIB_STATE_IDLE)
+    {
+        return 0; // 未校准
+    }
 
-    // 检查加速度计数据是否有效（避免除零）
-    if (!((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) {
-        recipNorm = invSqrt(ax * ax + ay * ay + az * az);
-        ax *= recipNorm;
-        ay *= recipNorm;
-        az *= recipNorm;
+    // 那就是状态机还是运行子状态
+    // 检查是否允许收集数据
+    if (IMU_D_and_A_Enable)
+    {
+        IMU_Update_Data();
 
-        // 检查磁力计数据是否有效
-        if (!((mx == 0.0f) && (my == 0.0f) && (mz == 0.0f))) {
-            recipNorm = invSqrt(mx * mx + my * my + mz * mz);
-            mx *= recipNorm;
-            my *= recipNorm;
-            mz *= recipNorm;
+        // 更新最大最小值
+        if (imu963ra_mag_x > cal->max_x) cal->max_x = imu963ra_mag_x;
+        if (imu963ra_mag_x < cal->min_x) cal->min_x = imu963ra_mag_x;
+        if (imu963ra_mag_y > cal->max_y) cal->max_y = imu963ra_mag_y;
+        if (imu963ra_mag_y < cal->min_y) cal->min_y = imu963ra_mag_y;
+        if (imu963ra_mag_z > cal->max_z) cal->max_z = imu963ra_mag_z;
+        if (imu963ra_mag_z < cal->min_z) cal->min_z = imu963ra_mag_z;
 
-            // 计算中间变量（优化计算效率）
-            _2q1mx = 2.0f * madgwick_q1 * mx;
-            _2q1my = 2.0f * madgwick_q1 * my;
-            _2q1mz = 2.0f * madgwick_q1 * mz;
-            _2q2mx = 2.0f * madgwick_q2 * mx;
-            _2q1 = 2.0f * madgwick_q1;
-            _2q2 = 2.0f * madgwick_q2;
-            _2q3 = 2.0f * madgwick_q3;
-            _2q4 = 2.0f * madgwick_q4;
-            _2q1q3 = 2.0f * madgwick_q1 * madgwick_q3;
-            _2q3q4 = 2.0f * madgwick_q3 * madgwick_q4;
-            q1q1 = madgwick_q1 * madgwick_q1;
-            q1q2 = madgwick_q1 * madgwick_q2;
-            q1q3 = madgwick_q1 * madgwick_q3;
-            q1q4 = madgwick_q1 * madgwick_q4;
-            q2q2 = madgwick_q2 * madgwick_q2;
-            q2q3 = madgwick_q2 * madgwick_q3;
-            q2q4 = madgwick_q2 * madgwick_q4;
-            q3q3 = madgwick_q3 * madgwick_q3;
-            q3q4 = madgwick_q3 * madgwick_q4;
-            q4q4 = madgwick_q4 * madgwick_q4;
+        cal->calib_count++;
+        IMU_D_and_A_Enable = 0;
 
-            // 计算参考磁场方向（在机体坐标系中）
-            hx = mx * q1q1 - _2q1my * madgwick_q4 + _2q1mz * madgwick_q3 + mx * q2q2 + _2q2 * my * madgwick_q3 + _2q2 * mz * madgwick_q4 - mx * q3q3 - mx * q4q4;
-            hy = _2q1mx * madgwick_q4 + my * q1q1 - _2q1mz * madgwick_q2 + _2q2mx * madgwick_q3 - my * q2q2 + my * q3q3 + _2q3 * mz * madgwick_q4 - my * q4q4;
-            _2bx = sqrtf(hx * hx + hy * hy);
-            _2bz = -_2q1mx * madgwick_q3 + _2q1my * madgwick_q2 + mz * q1q1 + _2q2mx * madgwick_q4 - mz * q2q2 + _2q3 * my * madgwick_q4 - mz * q3q3 + mz * q4q4;
-            _4bx = 2.0f * _2bx;
-            _4bz = 2.0f * _2bz;
+        // 样本数量达成目标
+        if (cal->calib_count >= MAG_CALIB_MINMAX_TARGET_SAMPLES)
+        {
+            // 计算硬铁偏移（椭球中心）
+            cal->offset_x = (float)(cal->max_x + cal->min_x) / 2.0f;
+            cal->offset_y = (float)(cal->max_y + cal->min_y) / 2.0f;
+            cal->offset_z = (float)(cal->max_z + cal->min_z) / 2.0f;
 
-            // 梯度下降法计算四元数导数（九轴模式）
-            s1 = -_2q3 * (2.0f * q2q4 - _2q1q3 - ax) + _2q2 * (2.0f * q1q2 + _2q3q4 - ay) - _2bz * madgwick_q3 * (_2bx * (0.5f - q3q3 - q4q4) + _2bz * (q2q4 - q1q3) - mx) + (-_2bx * madgwick_q4 + _2bz * madgwick_q2) * (_2bx * (q2q3 - q1q4) + _2bz * (q1q2 + q3q4) - my) + _2bx * madgwick_q3 * (_2bx * (q1q3 + q2q4) + _2bz * (0.5f - q2q2 - q3q3) - mz);
-            s2 = _2q4 * (2.0f * q2q4 - _2q1q3 - ax) + _2q1 * (2.0f * q1q2 + _2q3q4 - ay) - 4.0f * madgwick_q2 * (1.0f - 2.0f * q2q2 - 2.0f * q3q3 - az) + _2bz * madgwick_q4 * (_2bx * (0.5f - q3q3 - q4q4) + _2bz * (q2q4 - q1q3) - mx) + (_2bx * madgwick_q3 + _2bz * madgwick_q1) * (_2bx * (q2q3 - q1q4) + _2bz * (q1q2 + q3q4) - my) + (_2bx * madgwick_q4 - _4bz * madgwick_q2) * (_2bx * (q1q3 + q2q4) + _2bz * (0.5f - q2q2 - q3q3) - mz);
-            s3 = -_2q1 * (2.0f * q2q4 - _2q1q3 - ax) + _2q4 * (2.0f * q1q2 + _2q3q4 - ay) - 4.0f * madgwick_q3 * (1.0f - 2.0f * q2q2 - 2.0f * q3q3 - az) + (-_4bx * madgwick_q3 - _2bz * madgwick_q1) * (_2bx * (0.5f - q3q3 - q4q4) + _2bz * (q2q4 - q1q3) - mx) + (_2bx * madgwick_q2 + _2bz * madgwick_q4) * (_2bx * (q2q3 - q1q4) + _2bz * (q1q2 + q3q4) - my) + (_2bx * madgwick_q1 - _4bz * madgwick_q3) * (_2bx * (q1q3 + q2q4) + _2bz * (0.5f - q2q2 - q3q3) - mz);
-            s4 = _2q2 * (2.0f * q2q4 - _2q1q3 - ax) + _2q3 * (2.0f * q1q2 + _2q3q4 - ay) + (-_4bx * madgwick_q4 + _2bz * madgwick_q2) * (_2bx * (0.5f - q3q3 - q4q4) + _2bz * (q2q4 - q1q3) - mx) + (-_2bx * madgwick_q1 + _2bz * madgwick_q3) * (_2bx * (q2q3 - q1q4) + _2bz * (q1q2 + q3q4) - my) + _2bx * madgwick_q2 * (_2bx * (q1q3 + q2q4) + _2bz * (0.5f - q2q2 - q3q3) - mz);
-        } else {
-            // 六轴模式（无磁力计数据）
-            _2q1 = 2.0f * madgwick_q1;
-            _2q2 = 2.0f * madgwick_q2;
-            _2q3 = 2.0f * madgwick_q3;
-            _2q4 = 2.0f * madgwick_q4;
-            _2q1q3 = 2.0f * madgwick_q1 * madgwick_q3;
-            _2q3q4 = 2.0f * madgwick_q3 * madgwick_q4;
-            q1q1 = madgwick_q1 * madgwick_q1;
-            q1q2 = madgwick_q1 * madgwick_q2;
-            q1q3 = madgwick_q1 * madgwick_q3;
-            q1q4 = madgwick_q1 * madgwick_q4;
-            q2q2 = madgwick_q2 * madgwick_q2;
-            q2q4 = madgwick_q2 * madgwick_q4;
-            q3q3 = madgwick_q3 * madgwick_q3;
-            q3q4 = madgwick_q3 * madgwick_q4;
-            q4q4 = madgwick_q4 * madgwick_q4;
+            // 计算软铁缩放因子
+            float half_range_x = (float)(cal->max_x - cal->min_x) / 2.0f;   
+            float half_range_y = (float)(cal->max_y - cal->min_y) / 2.0f;
+            float half_range_z = (float)(cal->max_z - cal->min_z) / 2.0f;
+            
+            float max_half_range = half_range_x;
+            if (half_range_y > max_half_range) max_half_range = half_range_y;
+            if (half_range_z > max_half_range) max_half_range = half_range_z;
+            
+            if (half_range_x > 1.0f) cal->scale_x = max_half_range / half_range_x;
+            if (half_range_y > 1.0f) cal->scale_y = max_half_range / half_range_y;
+            if (half_range_z > 1.0f) cal->scale_z = max_half_range / half_range_z;
 
-            // 梯度下降法计算四元数导数（六轴模式）
-            s1 = -_2q3 * (2.0f * q2q4 - _2q1q3 - ax) + _2q2 * (2.0f * q1q2 + _2q3q4 - ay) - 4.0f * madgwick_q1 * (1.0f - 2.0f * q2q2 - 2.0f * q3q3 - az);
-            s2 = _2q4 * (2.0f * q2q4 - _2q1q3 - ax) + _2q1 * (2.0f * q1q2 + _2q3q4 - ay) - 4.0f * madgwick_q2 * (1.0f - 2.0f * q2q2 - 2.0f * q3q3 - az);
-            s3 = -_2q1 * (2.0f * q2q4 - _2q1q3 - ax) + _2q4 * (2.0f * q1q2 + _2q3q4 - ay) - 4.0f * madgwick_q3 * (1.0f - 2.0f * q2q2 - 2.0f * q3q3 - az);
-            s4 = _2q2 * (2.0f * q2q4 - _2q1q3 - ax) + _2q3 * (2.0f * q1q2 + _2q3q4 - ay);
+            cal->calib_state = MAG_CALIB_STATE_DONE;
+            printf("MAG_CAL_OFFSET: X=%.2f, Y=%.2f, Z=%.2f\r\n", cal->offset_x, cal->offset_y, cal->offset_z);
+            printf("MAG_CAL_SCALE: X=%.2f, Y=%.2f, Z=%.2f\r\n", cal->scale_x, cal->scale_y, cal->scale_z);
+        }
+    }
+
+    return 1; // 校准中
+}
+#endif
+
+#if MAG_CALIB_METHOD == 2 // 应用椭球拟合法
+//-------------------------------------------------------------------------------------------------------------------
+// 函数简介     磁力计校准状态机(椭球拟合法)
+// 返回参数     校准状态：0-未校准，1-校准中，2-校准完
+// 使用示例     Mag_Calib_Check(&mag_cal);
+// 算法原理：
+//   1. 采集3000个磁场数据点
+//   2. 使用最小二乘法拟合椭球模型
+//   3. 通过高斯消元法求解线性方程组
+//   4. 计算椭球中心（硬铁偏移）和缩放因子（软铁校正）
+// 
+// 优点：
+//   - 精度高，能处理复杂干扰
+//   - 适应性强
+// 缺点：
+//   - 计算复杂
+//   - 内存占用大（需要存储3000个数据点）
+// 
+// 容错机制：
+//   - 当拟合失败时，自动切换到Min-Max法
+// 使用要求：
+//   - 找一个远离强磁场干扰的环境（避开电机、磁铁、扬声器等）
+//   - 保持设备稳定，避免剧烈晃动
+//   - 缓慢、均匀地旋转设备，确保覆盖所有空间方向：
+//     - 水平方向：顺时针和逆时针各旋转360°
+//     - 垂直方向：上下俯仰，从底部朝上到顶部朝上
+//     - 倾斜方向：左右横滚，从左侧朝上到右侧朝上
+//     - 斜向方向：进行一些复合角度的旋转
+//   - 旋转过程持续约15-20秒，确保采集3000个数据点
+//   - 如果拟合失败，会自动切换到Min-Max法作为备用
+//   - 校准完成后，会自动计算并输出校准参数
+//-------------------------------------------------------------------------------------------------------------------
+int IMU_Mag_Calib_Check(Mag_Calib_StructDef *cal)
+{
+    if(cal->calib_state == MAG_CALIB_STATE_DONE)
+    {
+        return 2; // 校准完
+    }
+
+    if(cal->calib_state == MAG_CALIB_STATE_IDLE)
+    {
+        return 0; // 未校准
+    }
+
+    // 那就是状态机还是运行子状态
+    // 检查是否允许收集数据
+    if (IMU_D_and_A_Enable)
+    {
+        IMU_Update_Data();
+
+        // 存储采集的磁力计数据
+        static int16_t ellipsoid_mag_x_buf[3000];
+        static int16_t ellipsoid_mag_y_buf[3000];
+        static int16_t ellipsoid_mag_z_buf[3000];
+        static int16_t max_x = -32768, min_x = 32767;
+        static int16_t max_y = -32768, min_y = 32767;
+        static int16_t max_z = -32768, min_z = 32767;
+
+        // 记录最大值和最小值
+        if (imu963ra_mag_x > max_x) max_x = imu963ra_mag_x;
+        if (imu963ra_mag_x < min_x) min_x = imu963ra_mag_x;
+        if (imu963ra_mag_y > max_y) max_y = imu963ra_mag_y;
+        if (imu963ra_mag_y < min_y) min_y = imu963ra_mag_y;
+        if (imu963ra_mag_z > max_z) max_z = imu963ra_mag_z;
+        if (imu963ra_mag_z < min_z) min_z = imu963ra_mag_z;
+
+        // 存储数据点
+        if (cal->calib_count < 3000)
+        {
+            ellipsoid_mag_x_buf[cal->calib_count] = imu963ra_mag_x;
+            ellipsoid_mag_y_buf[cal->calib_count] = imu963ra_mag_y;
+            ellipsoid_mag_z_buf[cal->calib_count] = imu963ra_mag_z;
+            cal->calib_count++;
         }
 
-        // 归一化梯度向量
-        recipNorm = invSqrt(s1 * s1 + s2 * s2 + s3 * s3 + s4 * s4);
+        IMU_D_and_A_Enable = 0;
+
+        // 采满固定数量的点后执行椭球拟合
+        if (cal->calib_count >= 3000)
+        {
+            // 更新结构体中的最大最小值
+            cal->max_x = max_x;
+            cal->min_x = min_x;
+            cal->max_y = max_y;
+            cal->min_y = min_y;
+            cal->max_z = max_z;
+            cal->min_z = min_z;
+
+            // 执行椭球拟合
+            double m_matrix[6][6 + 1];
+            double solve[6];
+
+            // 初始化矩阵
+            memset(m_matrix, 0, sizeof(m_matrix));
+            memset(solve, 0, sizeof(solve));
+
+            // 构建矩阵
+            for (uint16_t i = 0; i < cal->calib_count; i++)
+            {
+                double x = (double)ellipsoid_mag_x_buf[i];
+                double y = (double)ellipsoid_mag_y_buf[i];
+                double z = (double)ellipsoid_mag_z_buf[i];
+                double V[7];
+
+                V[0] = y * y;
+                V[1] = z * z;
+                V[2] = x;
+                V[3] = y;
+                V[4] = z;
+                V[5] = 1.0;
+                V[6] = -x * x;
+
+                for (uint8_t row = 0; row < 6; row++)
+                {
+                    for (uint8_t col = 0; col < 6 + 1; col++)
+                    {
+                        m_matrix[row][col] += V[row] * V[col];
+                    }
+                }
+            }
+
+            // 归一化矩阵
+            for (uint8_t row = 0; row < 6; row++)
+            {
+                for (uint8_t col = 0; col < 6 + 1; col++)
+                {
+                    m_matrix[row][col] /= (double)cal->calib_count;
+                }
+            }
+
+            // 高斯消元法求解
+            for (uint8_t k = 0; k < 6; k++)
+            {
+                // 寻找主元素
+                uint8_t max_row = k;
+                for (uint8_t i = k + 1; i < 6; i++)
+                {
+                    if (fabs(m_matrix[i][k]) > fabs(m_matrix[max_row][k]))
+                    {
+                        max_row = i;
+                    }
+                }
+
+                // 交换行
+                if (max_row != k)
+                {
+                    for (uint8_t j = 0; j <= 6; j++)
+                    {
+                        double tmp = m_matrix[k][j];
+                        m_matrix[k][j] = m_matrix[max_row][j];
+                        m_matrix[max_row][j] = tmp;
+                    }
+                }
+
+                // 检查主元素是否为零
+                if (fabs(m_matrix[k][k]) < 1e-10)
+                {
+                    // 拟合失败，使用Min-Max法作为备用
+                    cal->offset_x = (float)(cal->max_x + cal->min_x) / 2.0f;
+                    cal->offset_y = (float)(cal->max_y + cal->min_y) / 2.0f;
+                    cal->offset_z = (float)(cal->max_z + cal->min_z) / 2.0f;
+
+                    float half_range_x = (float)(cal->max_x - cal->min_x) / 2.0f;
+                    float half_range_y = (float)(cal->max_y - cal->min_y) / 2.0f;
+                    float half_range_z = (float)(cal->max_z - cal->min_z) / 2.0f;
+                    
+                    float max_half_range = half_range_x;
+                    if (half_range_y > max_half_range) max_half_range = half_range_y;
+                    if (half_range_z > max_half_range) max_half_range = half_range_z;
+                    
+                    if (half_range_x > 1.0f) cal->scale_x = max_half_range / half_range_x;
+                    if (half_range_y > 1.0f) cal->scale_y = max_half_range / half_range_y;
+                    if (half_range_z > 1.0f) cal->scale_z = max_half_range / half_range_z;
+                    
+                    cal->calib_state = MAG_CALIB_STATE_DONE;
+                    printf("MAG_CAL_OFFSET: X=%.2f, Y=%.2f, Z=%.2f\r\n", cal->offset_x, cal->offset_y, cal->offset_z);
+                    printf("MAG_CAL_SCALE: X=%.2f, Y=%.2f, Z=%.2f\r\n", cal->scale_x, cal->scale_y, cal->scale_z);
+                    return 2;
+                }
+
+                // 消元
+                for (uint8_t i = k + 1; i < 6; i++)
+                {
+                    double factor = m_matrix[i][k] / m_matrix[k][k];
+                    for (uint8_t j = k; j <= 6; j++)
+                    {
+                        m_matrix[i][j] -= factor * m_matrix[k][j];
+                    }
+                }
+            }
+
+            // 回代求解
+            for (int8_t i = 5; i >= 0; i--)
+            {
+                double sum = 0.0;
+                for (uint8_t j = i + 1; j < 6; j++)
+                {
+                    sum += m_matrix[i][j] * solve[j];
+                }
+                solve[i] = (m_matrix[i][6] - sum) / m_matrix[i][i];
+            }
+
+            // 计算校准参数
+            double a = solve[0];
+            double b = solve[1];
+            double c = solve[2];
+            double d = solve[3];
+            double e = solve[4];
+            double f = solve[5];
+
+            double X0 = -c / 2.0;
+            double Y0 = -d / (2.0 * a);
+            double Z0 = -e / (2.0 * b);
+            double temp = X0 * X0 + a * Y0 * Y0 + b * Z0 * Z0 - f;
+
+            if (temp > 0.0)
+            {
+                double A = sqrt(temp);
+                double B = A / sqrt(a);
+                double C = A / sqrt(b);
+
+                cal->offset_x = (float)X0;
+                cal->offset_y = (float)Y0;
+                cal->offset_z = (float)Z0;
+
+                cal->scale_x = (float)(1.0 / A);
+                cal->scale_y = (float)(1.0 / B);
+                cal->scale_z = (float)(1.0 / C);
+            }
+            else
+            {
+                // 拟合失败，使用Min-Max法作为备用
+                cal->offset_x = (float)(cal->max_x + cal->min_x) / 2.0f;
+                cal->offset_y = (float)(cal->max_y + cal->min_y) / 2.0f;
+                cal->offset_z = (float)(cal->max_z + cal->min_z) / 2.0f;
+
+                float half_range_x = (float)(cal->max_x - cal->min_x) / 2.0f;
+                float half_range_y = (float)(cal->max_y - cal->min_y) / 2.0f;
+                float half_range_z = (float)(cal->max_z - cal->min_z) / 2.0f;
+                
+                float max_half_range = half_range_x;
+                if (half_range_y > max_half_range) max_half_range = half_range_y;
+                if (half_range_z > max_half_range) max_half_range = half_range_z;
+                
+                if (half_range_x > 1.0f) cal->scale_x = max_half_range / half_range_x;
+                if (half_range_y > 1.0f) cal->scale_y = max_half_range / half_range_y;
+                if (half_range_z > 1.0f) cal->scale_z = max_half_range / half_range_z;
+            }
+
+            cal->calib_state = MAG_CALIB_STATE_DONE;
+            printf("MAG_CAL_OFFSET: X=%.2f, Y=%.2f, Z=%.2f\r\n", cal->offset_x, cal->offset_y, cal->offset_z);
+            printf("MAG_CAL_SCALE: X=%.6f, Y=%.6f, Z=%.6f\r\n", cal->scale_x, cal->scale_y, cal->scale_z);
+            return 2;
+        }
+    }
+    return 1; // 校准进行中
+}
+#endif
+
+//-------------------------------------------------------------------------------------------------------------------
+// 函数简介     应用磁力计校准参数
+// 参数说明     cal             磁力计校准结构体指针
+// 参数说明     mx              用于存储校准后X轴数据的指针
+// 参数说明     my              用于存储校准后Y轴数据的指针
+// 参数说明     mz              用于存储校准后Z轴数据的指针
+// 使用示例     int16_t mx, my, mz;
+// 使用示例     IMU_Mag_Apply(&mag_cal, &mx, &my, &mz);
+// 备注信息     函数内部直接使用全局变量 imu963ra_mag_x/y/z 获取原始数据
+//              校准完成后，将校准结果存储到传入的指针中
+//              未校准时，直接将原始数据存储到传入的指针中
+//-------------------------------------------------------------------------------------------------------------------
+void IMU_Mag_Apply(Mag_Calib_StructDef *cal, int16_t *mx, int16_t *my, int16_t *mz)
+{
+    // 如果校准完成，应用校准参数
+    if (cal->calib_state == MAG_CALIB_STATE_DONE)
+    {
+        *mx = (int16_t)(((float)imu963ra_mag_x - cal->offset_x) * cal->scale_x);
+        *my = (int16_t)(((float)imu963ra_mag_y - cal->offset_y) * cal->scale_y);
+        *mz = (int16_t)(((float)imu963ra_mag_z - cal->offset_z) * cal->scale_z);
+    }
+    else
+    {
+        *mx = (int16_t)imu963ra_mag_x;
+        *my = (int16_t)imu963ra_mag_y;
+        *mz = (int16_t)imu963ra_mag_z;
+    }
+}
+/*******************************************************************************************************************/
+/*------------------------------------------------------------------------------------------------[E] 磁力计校准 [E]*/
+/*******************************************************************************************************************/
+
+
+
+#if YAW_ONLY_ANALYSIS_MODE > 0
+/*******************************************************************************************************************/
+/*[S] 仅Yaw输出姿态解算 [S]---------------------------------------------------------------------------------------*/
+/*******************************************************************************************************************/
+
+// Yaw-only算法变量
+YawOnly_UnionDef yaw_only = {
+    #if YAW_ONLY_ANALYSIS_MODE == 1
+    .mag_get_yaw = {
+        .mag_declination = 0.0f,
+        .yaw_filter_alpha = 0.3f,
+        .yaw_filtered = 0.0f
+    }
+    #elif YAW_ONLY_ANALYSIS_MODE == 2
+    .mahony = {
+        .q = {1.0f, 0.0f, 0.0f, 0.0f},
+        .Kp = 2.0f,
+        .Ki = 0.005f,
+        .quick_Kp = 10.0f,
+        .quick_Ki = 0.005f,
+        .exInt = 0.0f,
+        .eyInt = 0.0f,
+        .ezInt = 0.0f,
+        .quick_mode = 1
+    }
+    #elif YAW_ONLY_ANALYSIS_MODE == 3
+    .madgwick = {
+        .q = {1.0f, 0.0f, 0.0f, 0.0f},
+        .beta = 1.2f,
+        .quick_beta = 10.0f,
+        .invSampleFreq = 0.001f,
+        .mag_declination = 0.0f
+    }
+    #elif YAW_ONLY_ANALYSIS_MODE == 4
+    .tilt_mag_yaw = {
+        .yaw = 0.0f,
+        .yaw_filtered = 0.0f,
+        .yaw_error_int = 0.0f,
+        .kp = 0.08f,
+        .ki = 0.0025f,
+        .quick_kp = 0.03f,
+        .quick_ki = 0.0010f,
+        .yaw_filter_alpha = 0.3f,
+        .mag_declination = 0.0f
+    }
+    #endif
+};
+
+#if YAW_ONLY_ANALYSIS_MODE == 1
+//-------------------------------------------------------------------------------------------------------------------
+// 函数简介     Mag_Get_Yaw算法（仅磁力计+倾斜补偿）
+//-------------------------------------------------------------------------------------------------------------------
+static float Mag_Get_Yaw_Update(void)
+{
+    int16_t mag_x = 0, mag_y = 0, mag_z = 0;
+    float ax, ay, az;
+
+    IMU_Mag_Apply(&mag_cal, &mag_x, &mag_y, &mag_z);   
+    IMU_Acc_Apply(&ax, &ay, &az);
+
+    float mx = (float)mag_x;
+    float my = (float)mag_y;
+    float mz = (float)mag_z;
+
+    float acc_norm = sqrtf(ax * ax + ay * ay + az * az);
+    if (acc_norm < 1e-6f) return yaw_only.mag_get_yaw.yaw_filtered;
+    ax /= acc_norm;
+    ay /= acc_norm;
+    az /= acc_norm;
+
+    float mag_norm = sqrtf(mx * mx + my * my + mz * mz);
+    if (mag_norm < 1e-6f) return yaw_only.mag_get_yaw.yaw_filtered;
+    mx /= mag_norm;
+    my /= mag_norm;
+    mz /= mag_norm;
+
+    float roll = atan2f(ay, az);
+    float pitch = atan2f(-ax, sqrtf(ay * ay + az * az));
+
+    float cr = cosf(0.5f * roll);
+    float sr = sinf(0.5f * roll);
+    float cp = cosf(0.5f * pitch);
+    float sp = sinf(0.5f * pitch);
+
+    float q0 = cr * cp;
+    float q1 = sr * cp;
+    float q2 = cr * sp;
+    float q3 = -sr * sp;
+
+    float r11 = 1.0f - 2.0f * (q2 * q2 + q3 * q3);
+    float r12 = 2.0f * (q1 * q2 - q0 * q3);
+    float r13 = 2.0f * (q1 * q3 + q0 * q2);
+    float r21 = 2.0f * (q1 * q2 + q0 * q3);
+    float r22 = 1.0f - 2.0f * (q1 * q1 + q3 * q3);
+    float r23 = 2.0f * (q2 * q3 - q0 * q1);
+
+    float mx_h = r11 * mx + r12 * my + r13 * mz;
+    float my_h = r21 * mx + r22 * my + r23 * mz;
+
+    float mag_h_norm = sqrtf(mx_h * mx_h + my_h * my_h);
+    if (mag_h_norm < 1e-6f) return yaw_only.mag_get_yaw.yaw_filtered;
+
+    mx_h /= mag_h_norm;
+    my_h /= mag_h_norm;
+
+    float yaw_rad = atan2f(my_h, mx_h);
+    float yaw_deg = yaw_rad * 180.0f / PI;
+
+    yaw_deg += yaw_only.mag_get_yaw.mag_declination;
+
+    float yaw_mag = -yaw_deg;
+    while (yaw_mag > 180.0f) yaw_mag -= 360.0f;
+    while (yaw_mag < -180.0f) yaw_mag += 360.0f;
+
+    return -yaw_mag;
+}
+#endif
+
+#if YAW_ONLY_ANALYSIS_MODE == 2
+//-------------------------------------------------------------------------------------------------------------------
+// 函数简介     Mahony AHRS Yaw-only算法
+//-------------------------------------------------------------------------------------------------------------------
+static float Mahony_YawOnly_Update(float dt)
+{
+    int16_t mag_x = 0;
+    int16_t mag_y = 0;
+    int16_t mag_z = 0;
+
+    float gx, gy, gz;
+    float ax, ay, az;
+    float recipNorm;
+
+    float q0 = yaw_only.mahony.q.q0;
+    float q1 = yaw_only.mahony.q.q1;
+    float q2 = yaw_only.mahony.q.q2;
+    float q3 = yaw_only.mahony.q.q3;
+
+    float q0q0, q0q1, q0q2, q0q3;
+    float q1q1, q1q2, q1q3;
+    float q2q2, q2q3;
+    float q3q3;
+
+    float vx, vy, vz;
+    float wx, wy, wz;
+    float hx, hy, bx, bz;
+    float ex, ey, ez;
+    float halfT;
+    float yaw_deg;
+    float kp;
+    float ki;
+
+    if (dt <= 1e-6f)
+    {
+        dt = 0.01f;
+    }
+
+    kp = imu_stable ? yaw_only.mahony.Kp : yaw_only.mahony.quick_Kp;
+    ki = imu_stable ? yaw_only.mahony.Ki : yaw_only.mahony.quick_Ki;
+
+    IMU_Mag_Apply(&mag_cal, &mag_x, &mag_y, &mag_z);
+    IMU_Acc_Apply(&ax, &ay, &az);  
+    gyro_data_process(&gx, &gy, &gz);
+    float mx = (float)mag_x;
+    float my = (float)mag_y;
+    float mz = (float)mag_z;
+
+    float declination_rad = yaw_only.mag_get_yaw.mag_declination * PI / 180.0f;
+    float mx_raw = mx;
+    float my_raw = my;
+    mx = mx_raw * cosf(declination_rad) - my_raw * sinf(declination_rad);
+    my = mx_raw * sinf(declination_rad) + my_raw * cosf(declination_rad);
+
+    recipNorm = invSqrt(ax * ax + ay * ay + az * az);
+    if (recipNorm < 1e-6f)
+    {
+        return Yaw_Result;
+    }
+    ax *= recipNorm;
+    ay *= recipNorm;
+    az *= recipNorm;
+
+    recipNorm = invSqrt(mx * mx + my * my + mz * mz);
+    if (recipNorm < 1e-6f)
+    {
+        return Yaw_Result;
+    }
+    mx *= recipNorm;
+    my *= recipNorm;
+    mz *= recipNorm;
+
+    q0q0 = q0 * q0;
+    q0q1 = q0 * q1;
+    q0q2 = q0 * q2;
+    q0q3 = q0 * q3;
+    q1q1 = q1 * q1;
+    q1q2 = q1 * q2;
+    q1q3 = q1 * q3;
+    q2q2 = q2 * q2;
+    q2q3 = q2 * q3;
+    q3q3 = q3 * q3;
+
+    vx = 2.0f * (q1q3 - q0q2);
+    vy = 2.0f * (q0q1 + q2q3);
+    vz = q0q0 - q1q1 - q2q2 + q3q3;
+
+    hx = 2.0f * (mx * (0.5f - q2q2 - q3q3) + my * (q1q2 - q0q3) + mz * (q1q3 + q0q2));
+    hy = 2.0f * (mx * (q1q2 + q0q3) + my * (0.5f - q1q1 - q3q3) + mz * (q2q3 - q0q1));
+    bx = sqrtf(hx * hx + hy * hy);
+    bz = 2.0f * (mx * (q1q3 - q0q2) + my * (q2q3 + q0q1) + mz * (0.5f - q1q1 - q2q2));
+
+    wx = 2.0f * bx * (0.5f - q2q2 - q3q3) + 2.0f * bz * (q1q3 - q0q2);
+    wy = 2.0f * bx * (q1q2 - q0q3) + 2.0f * bz * (q0q1 + q2q3);
+    wz = 2.0f * bx * (q0q2 + q1q3) + 2.0f * bz * (0.5f - q1q1 - q2q2);
+
+    ex = (ay * vz - az * vy) + (my * wz - mz * wy);
+    ey = (az * vx - ax * vz) + (mz * wx - mx * wz);
+    ez = (ax * vy - ay * vx) + (mx * wy - my * wx);
+
+    if (ki > 0.0f)
+    {
+        yaw_only.mahony.exInt += ex * ki * dt;
+        yaw_only.mahony.eyInt += ey * ki * dt;
+        yaw_only.mahony.ezInt += ez * ki * dt;
+    }
+    else
+    {
+        yaw_only.mahony.exInt = 0.0f;
+        yaw_only.mahony.eyInt = 0.0f;
+        yaw_only.mahony.ezInt = 0.0f;
+    }
+
+    gx += kp * ex + yaw_only.mahony.exInt;
+    gy += kp * ey + yaw_only.mahony.eyInt;
+    gz += kp * ez + yaw_only.mahony.ezInt;
+
+    halfT = 0.5f * dt;
+    q0 += (-q1 * gx - q2 * gy - q3 * gz) * halfT;
+    q1 += ( q0 * gx + q2 * gz - q3 * gy) * halfT;
+    q2 += ( q0 * gy - q1 * gz + q3 * gx) * halfT;
+    q3 += ( q0 * gz + q1 * gy - q2 * gx) * halfT;
+
+    recipNorm = invSqrt(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
+    q0 *= recipNorm;
+    q1 *= recipNorm;
+    q2 *= recipNorm;
+    q3 *= recipNorm;
+
+    yaw_only.mahony.q.q0 = q0;
+    yaw_only.mahony.q.q1 = q1;
+    yaw_only.mahony.q.q2 = q2;
+    yaw_only.mahony.q.q3 = q3;
+
+    yaw_deg = atan2f(2.0f * (q1 * q2 + q0 * q3), q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3) * 180.0f / PI;
+
+    return yaw_deg;
+}
+#endif
+
+#if YAW_ONLY_ANALYSIS_MODE == 3
+//-------------------------------------------------------------------------------------------------------------------
+// 函数简介     Madgwick AHRS Yaw-only算法
+//-------------------------------------------------------------------------------------------------------------------
+static float Madgwick_YawOnly_Update(float dt)
+{
+    float recipNorm;
+    float s0, s1, s2, s3;
+    float qDot1, qDot2, qDot3, qDot4;
+    float hx, hy;
+    float _2bx, _2bz, _4bx, _4bz;
+    float _2q0, _2q1, _2q2, _2q3, _2q0q2, _2q2q3;
+    float q0q1, q0q2, q0q3, q1q1, q1q2, q1q3, q2q2, q2q3, q3q3;
+    float yaw_deg;
+    float beta;
+
+    int16_t mag_x = 0;
+    int16_t mag_y = 0;
+    int16_t mag_z = 0;
+
+    float gx, gy, gz;
+    float ax, ay, az;
+    float q0 = yaw_only.madgwick.q.q0;
+    float q1 = yaw_only.madgwick.q.q1;
+    float q2 = yaw_only.madgwick.q.q2;
+    float q3 = yaw_only.madgwick.q.q3;
+
+    if (dt <= 1e-6f)
+    {
+        dt = 0.01f;
+    }
+
+    beta = imu_stable ? yaw_only.madgwick.beta : yaw_only.madgwick.quick_beta;
+
+    IMU_Mag_Apply(&mag_cal, &mag_x, &mag_y, &mag_z);
+    IMU_Acc_Apply(&ax, &ay, &az);
+    gyro_data_process(&gx, &gy, &gz);
+    float mx = (float)mag_x;
+    float my = (float)mag_y;
+    float mz = (float)mag_z;
+
+    float declination_rad = yaw_only.mag_get_yaw.mag_declination * PI / 180.0f;
+    float mx_raw = mx;
+    float my_raw = my;
+    mx = mx_raw * cosf(declination_rad) - my_raw * sinf(declination_rad);
+    my = mx_raw * sinf(declination_rad) + my_raw * cosf(declination_rad);
+
+    recipNorm = invSqrt(ax * ax + ay * ay + az * az);
+    if (recipNorm < 1e-6f)
+    {
+        return atan2f(2.0f * (q1 * q2 + q0 * q3), q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3) * 180.0f / PI;
+    }
+    ax *= recipNorm;
+    ay *= recipNorm;
+    az *= recipNorm;
+
+    recipNorm = invSqrt(mx * mx + my * my + mz * mz);
+    if (recipNorm < 1e-6f)
+    {
+        return atan2f(2.0f * (q1 * q2 + q0 * q3), q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3) * 180.0f / PI;
+    }
+    mx *= recipNorm;
+    my *= recipNorm;
+    mz *= recipNorm;
+
+    q0q1 = q0 * q1;
+    q0q2 = q0 * q2;
+    q0q3 = q0 * q3;
+    q1q1 = q1 * q1;
+    q1q2 = q1 * q2;
+    q1q3 = q1 * q3;
+    q2q2 = q2 * q2;
+    q2q3 = q2 * q3;
+    q3q3 = q3 * q3;
+
+    hx = 2.0f * (mx * (0.5f - q2q2 - q3q3) + my * (q1q2 - q0q3) + mz * (q1q3 + q0q2));
+    hy = 2.0f * (mx * (q1q2 + q0q3) + my * (0.5f - q1q1 - q3q3) + mz * (q2q3 - q0q1));
+    _2bx = sqrtf(hx * hx + hy * hy);
+    _2bz = 2.0f * (mx * (q1q3 - q0q2) + my * (q2q3 + q0q1) + mz * (0.5f - q1q1 - q2q2));
+
+    _2q0 = 2.0f * q0;
+    _2q1 = 2.0f * q1;
+    _2q2 = 2.0f * q2;
+    _2q3 = 2.0f * q3;
+    _2q0q2 = 2.0f * q0q2;
+    _2q2q3 = 2.0f * q2q3;
+    _4bx = 2.0f * _2bx;
+    _4bz = 2.0f * _2bz;
+
+    s0 = -_2q2 * (2.0f * q1q3 - _2q0q2 - ax)
+       + _2q1 * (2.0f * q0q1 + _2q2q3 - ay)
+       - _2bz * q2 * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx)
+       + (-_2bx * q3 + _2bz * q1) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my)
+       + _2bx * q2 * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
+    s1 = _2q3 * (2.0f * q1q3 - _2q0q2 - ax)
+       + _2q0 * (2.0f * q0q1 + _2q2q3 - ay)
+       - 4.0f * q1 * (1.0f - 2.0f * q1q1 - 2.0f * q2q2 - az)
+       + _2bz * q3 * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx)
+       + (_2bx * q2 + _2bz * q0) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my)
+       + (_2bx * q3 - _4bz * q1) * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
+    s2 = -_2q0 * (2.0f * q1q3 - _2q0q2 - ax)
+       + _2q3 * (2.0f * q0q1 + _2q2q3 - ay)
+       - 4.0f * q2 * (1.0f - 2.0f * q1q1 - 2.0f * q2q2 - az)
+       + (-_4bx * q2 - _2bz * q0) * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx)
+       + (_2bx * q1 + _2bz * q3) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my)
+       + (_2bx * q0 - _4bz * q2) * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
+    s3 = _2q1 * (2.0f * q1q3 - _2q0q2 - ax)
+       + _2q2 * (2.0f * q0q1 + _2q2q3 - ay)
+       + (-_4bx * q3 + _2bz * q1) * (_2bx * (0.5f - q2q2 - q3q3) + _2bz * (q1q3 - q0q2) - mx)
+       + (-_2bx * q0 + _2bz * q2) * (_2bx * (q1q2 - q0q3) + _2bz * (q0q1 + q2q3) - my)
+       + _2bx * q1 * (_2bx * (q0q2 + q1q3) + _2bz * (0.5f - q1q1 - q2q2) - mz);
+
+    recipNorm = invSqrt(s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3);
+    if (recipNorm >= 1e-6f)
+    {
+        s0 *= recipNorm;
         s1 *= recipNorm;
         s2 *= recipNorm;
         s3 *= recipNorm;
-        s4 *= recipNorm;
-
-        // 计算四元数导数（结合陀螺仪和梯度下降）
-        qDot1 = 0.5f * (-madgwick_q2 * gx - madgwick_q3 * gy - madgwick_q4 * gz) - madgwick_beta * s1;
-        qDot2 = 0.5f * (madgwick_q1 * gx + madgwick_q3 * gz - madgwick_q4 * gy) - madgwick_beta * s2;
-        qDot3 = 0.5f * (madgwick_q1 * gy - madgwick_q2 * gz + madgwick_q4 * gx) - madgwick_beta * s3;
-        qDot4 = 0.5f * (madgwick_q1 * gz + madgwick_q2 * gy - madgwick_q3 * gx) - madgwick_beta * s4;
-    } else {
-        // 加速度计数据无效，仅使用陀螺仪
-        qDot1 = 0.5f * (-madgwick_q2 * gx - madgwick_q3 * gy - madgwick_q4 * gz);
-        qDot2 = 0.5f * (madgwick_q1 * gx + madgwick_q3 * gz - madgwick_q4 * gy);
-        qDot3 = 0.5f * (madgwick_q1 * gy - madgwick_q2 * gz + madgwick_q4 * gx);
-        qDot4 = 0.5f * (madgwick_q1 * gz + madgwick_q2 * gy - madgwick_q3 * gx);
     }
 
-    // 积分更新四元数
-    madgwick_q1 += qDot1 * dt;
-    madgwick_q2 += qDot2 * dt;
-    madgwick_q3 += qDot3 * dt;
-    madgwick_q4 += qDot4 * dt;
+    qDot1 = 0.5f * (-q1 * gx - q2 * gy - q3 * gz) - beta * s0;
+    qDot2 = 0.5f * ( q0 * gx + q2 * gz - q3 * gy) - beta * s1;
+    qDot3 = 0.5f * ( q0 * gy - q1 * gz + q3 * gx) - beta * s2;
+    qDot4 = 0.5f * ( q0 * gz + q1 * gy - q2 * gx) - beta * s3;
 
-    // 归一化四元数（保持单位四元数）
-    recipNorm = invSqrt(madgwick_q1 * madgwick_q1 + madgwick_q2 * madgwick_q2 + madgwick_q3 * madgwick_q3 + madgwick_q4 * madgwick_q4);
-    madgwick_q1 *= recipNorm;
-    madgwick_q2 *= recipNorm;
-    madgwick_q3 *= recipNorm;
-    madgwick_q4 *= recipNorm;
+    q0 += qDot1 * dt;
+    q1 += qDot2 * dt;
+    q2 += qDot3 * dt;
+    q3 += qDot4 * dt;
+
+    recipNorm = invSqrt(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
+    q0 *= recipNorm;
+    q1 *= recipNorm;
+    q2 *= recipNorm;
+    q3 *= recipNorm;
+
+    yaw_only.madgwick.q.q0 = q0;
+    yaw_only.madgwick.q.q1 = q1;
+    yaw_only.madgwick.q.q2 = q2;
+    yaw_only.madgwick.q.q3 = q3;
+
+    yaw_deg = atan2f(2.0f * (q1 * q2 + q0 * q3), q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3) * 180.0f / PI;
+
+    return yaw_deg;
 }
+#endif
 
-/*******************************************************************************************************************/
-/*[S] 零飘校准 [S]--------------------------------------------------------------------------------------------------*/
-/*******************************************************************************************************************/
-
-// 陀螺仪零飘校准相关变量
-static int32_t sum_gx = 0, sum_gy = 0, sum_gz = 0;// 陀螺仪数据累加和
-static float gyro_off_x = 0, gyro_off_y = 0, gyro_off_z = 0;// 陀螺仪零点偏移量
-
+#if YAW_ONLY_ANALYSIS_MODE == 4
 //-------------------------------------------------------------------------------------------------------------------
-// 函数简介     IMU963RA 校准初始化
-// 使用示例     IMU963RA_Calibration_Start();                                              // 开始校准
-// 备注信息     校准状态机启用前的操作，用于初始化校准状态
+// 函数简介     TiltMagYaw算法（重力投影磁修正陀螺积分）
 //-------------------------------------------------------------------------------------------------------------------
-void IMU963RA_Calibration_Start(void)
+static float TiltMagYaw_Update(float dt)
 {
-    calib_state = CALIB_STATE_RUNNING;  // 设置状态为校准中
-    calib_count = 0;
-    sum_gx = 0;
-    sum_gy = 0;
-    sum_gz = 0;
+    int16_t mag_x = 0;
+    int16_t mag_y = 0;
+    int16_t mag_z = 0;
+
+    float gx, gy, gz;
+    float ax, ay, az;
+    float yaw_deg;
+    float kp, ki;
+
+    if (dt <= 1e-6f)
+    {
+        dt = 0.01f;
+    }
+
+    kp = imu_stable ? yaw_only.tilt_mag_yaw.kp : yaw_only.tilt_mag_yaw.quick_kp;
+    ki = imu_stable ? yaw_only.tilt_mag_yaw.ki : yaw_only.tilt_mag_yaw.quick_ki;
+
+    IMU_Mag_Apply(&mag_cal, &mag_x, &mag_y, &mag_z);
+    IMU_Acc_Apply(&ax, &ay, &az);
+    gyro_data_process(&gx, &gy, &gz);
+    float mx = (float)mag_x;
+    float my = (float)mag_y;
+    float mz = (float)mag_z;
+
+    float acc_norm = sqrtf(ax * ax + ay * ay + az * az);
+    float mag_norm = sqrtf(mx * mx + my * my + mz * mz);
+    float cos_roll, sin_roll, cos_pitch, sin_pitch;
+    float mx_level, my_level;
+    float yaw_mag;
+    float yaw_gyro_inc;
+    float yaw_error;
+
+    if (acc_norm > 1e-6f)
+    {
+        ax /= acc_norm;
+        ay /= acc_norm;
+        az /= acc_norm;
+    }
+
+    if (mag_norm > 1e-6f)
+    {
+        mx /= mag_norm;
+        my /= mag_norm;
+        mz /= mag_norm;
+    }
+
+    float pitch = -asinf(ax);
+    float roll = atan2f(ay, az);
+
+    cos_roll = cosf(roll);
+    sin_roll = sinf(roll);
+    cos_pitch = cosf(pitch);
+    sin_pitch = sinf(pitch);
+
+    mx_level = mx * cos_pitch + my * sin_roll * sin_pitch + mz * cos_roll * sin_pitch;
+    my_level = my * cos_roll - mz * sin_roll;
+
+    float declination_rad = yaw_only.tilt_mag_yaw.mag_declination * PI / 180.0f;
+    float mx_raw = mx_level;
+    float my_raw = my_level;
+    mx_level = mx_raw * cosf(declination_rad) - my_raw * sinf(declination_rad);
+    my_level = mx_raw * sinf(declination_rad) + my_raw * cosf(declination_rad);
+
+    yaw_mag = atan2f(my_level, mx_level);
+    yaw_mag = yaw_mag * 180.0f / PI;
+
+    while (yaw_mag > 180.0f) yaw_mag -= 360.0f;
+    while (yaw_mag < -180.0f) yaw_mag += 360.0f;
+
+    yaw_deg = yaw_only.tilt_mag_yaw.yaw;
+    yaw_gyro_inc = gz * 180.0f / PI * dt;
+    yaw_deg += yaw_gyro_inc;
+
+    while (yaw_deg > 180.0f) yaw_deg -= 360.0f;
+    while (yaw_deg < -180.0f) yaw_deg += 360.0f;
+
+    yaw_error = -yaw_mag - yaw_deg;
+    while (yaw_error > 180.0f) yaw_error -= 360.0f;
+    while (yaw_error < -180.0f) yaw_error += 360.0f;
+
+    yaw_only.tilt_mag_yaw.yaw_error_int += yaw_error * ki * dt;
+    yaw_deg += kp * yaw_error + yaw_only.tilt_mag_yaw.yaw_error_int;
+
+    while (yaw_deg > 180.0f) yaw_deg -= 360.0f;
+    while (yaw_deg < -180.0f) yaw_deg += 360.0f;
+
+    yaw_only.tilt_mag_yaw.yaw = yaw_deg;
+    yaw_only.tilt_mag_yaw.yaw_filtered = yaw_only.tilt_mag_yaw.yaw_filter_alpha * (-yaw_deg) +
+                                            (1.0f - yaw_only.tilt_mag_yaw.yaw_filter_alpha) * yaw_only.tilt_mag_yaw.yaw_filtered;
+
+    return yaw_only.tilt_mag_yaw.yaw_filtered;
 }
+#endif
 
-//-------------------------------------------------------------------------------------------------------------------
-// 函数简介     IMU963RA 校准状态机
-// 使用示例     IMU963RA_Calibration_Check();                                              // 检查校准状态
-// 返回校准状态（数字对应CalibState_t的枚举定义）
-// 0 未校准
-// 1 校准中
-// 2 已校准
-// 备注信息     调用方法特殊，可以参考调试文件的代码调用
-//-------------------------------------------------------------------------------------------------------------------
-int8_t IMU963RA_Calibration_Check(void)
+/*******************************************************************************************************************/
+/*---------------------------------------------------------------------------------------[E] 仅Yaw输出姿态解算 [E]*/
+/*******************************************************************************************************************/
+#endif
+
+
+
+#if IMU_ANALYSIS_MODE == 3 // 三轴
+/*******************************************************************************************************************/
+/*-[S] 三轴姿态解算 [S]----------------------------------------------------------------------------------------------*/
+/*******************************************************************************************************************/
+
+// 三轴姿态解算变量
+ThreeAxis_StructDef three_axis = {
+    .q = {1.0f, 0.0f, 0.0f, 0.0f}
+};
+
+static void ThreeAxis_Update(void)
 {
-    if(calib_state == CALIB_STATE_DONE)
-    {
-        return 2; // 已校准完成
-    }
+    float gx, gy, gz;
+    float q0, q1, q2, q3;
+    float halfT;
 
-    if(calib_state == CALIB_STATE_SPARE)
-    {
-        return 0; // 未开始校准
-    }
-    
-    // 检查是否允许收集数据
-    if(IMU963RA_analysis_enable)
-    {
-        imu963ra_update_data();
+    IMU_Gyro_Apply(&gyro_cal, &gx, &gy, &gz);
 
-        // 收集数据（仅陀螺仪）
-        sum_gx += imu963ra_gyro_x;
-        sum_gy += imu963ra_gyro_y;
-        sum_gz += imu963ra_gyro_z;
-        calib_count++;
+    gx = gx * PI / 180.0f;
+    gy = gy * PI / 180.0f;
+    gz = gz * PI / 180.0f;
 
-        IMU963RA_analysis_enable = 0;
-        
-        // 检查是否收集够样本数
-        if(calib_count >= CALIB_TARGET_SAMPLES)
-        {
-            gyro_off_x = (float)sum_gx / CALIB_TARGET_SAMPLES;
-            gyro_off_y = (float)sum_gy / CALIB_TARGET_SAMPLES;
-            gyro_off_z = (float)sum_gz / CALIB_TARGET_SAMPLES;
-            
-            calib_state = CALIB_STATE_DONE;
-        }
-    }
-    
-    return 1; // 校准中
-}
+    q0 = three_axis.q.q0;
+    q1 = three_axis.q.q1;
+    q2 = three_axis.q.q2;
+    q3 = three_axis.q.q3;
 
-/*******************************************************************************************************************/
-/*--------------------------------------------------------------------------------------------------[E] 零飘校准 [E]*/
-/*******************************************************************************************************************/
+    halfT = 0.5f * DELTA_T_3AXIS;
 
+    q0 += (-q1 * gx - q2 * gy - q3 * gz) * halfT;
+    q1 += ( q0 * gx + q2 * gz - q3 * gy) * halfT;
+    q2 += ( q0 * gy - q1 * gz + q3 * gx) * halfT;
+    q3 += ( q0 * gz + q1 * gy - q2 * gx) * halfT;
 
-/*******************************************************************************************************************/
-/*[S] 姿态解算 [S]--------------------------------------------------------------------------------------------------*/
-/*******************************************************************************************************************/
+    float norm = invSqrt(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
+    three_axis.q.q0 = q0 * norm;
+    three_axis.q.q1 = q1 * norm;
+    three_axis.q.q2 = q2 * norm;
+    three_axis.q.q3 = q3 * norm;
 
-//-------------------------------------------------------------------------------------------------------------------
-// 函数简介     IMU963RA 姿态解算
-// 使用示例     IMU963RA_Analysis_Update();                                              // 执行姿态解算
-// 备注信息     定时调用该函数，更新姿态解算结果
-//-------------------------------------------------------------------------------------------------------------------
-void IMU963RA_Analysis_Update(void)
-{
-    // 只有在校准完成后才执行姿态解算
-    if (calib_state != CALIB_STATE_DONE)
-    {
-        return; // 未校准完成，不执行解算
-    }
-    
-    float dt = Get_dt(); // 获取时间间隔
-
-    // 准备传感器数据
-    Axis3f acc, gyro, mag;
-
-    // 加速度计数据（应用坐标系配置）
-    acc.x = imu963ra_acc_x * IMU_ACC_X_SIGN;
-    acc.y = imu963ra_acc_y * IMU_ACC_Y_SIGN;
-    acc.z = imu963ra_acc_z * IMU_ACC_Z_SIGN;
-
-    // 陀螺仪数据（应用零飘校准、坐标系配置、scale转换）
-    gyro.x = (imu963ra_gyro_x - gyro_off_x) * IMU_GYRO_X_SIGN * imu_gyro_scale;
-    gyro.y = (imu963ra_gyro_y - gyro_off_y) * IMU_GYRO_Y_SIGN * imu_gyro_scale;
-    gyro.z = (imu963ra_gyro_z - gyro_off_z) * IMU_GYRO_Z_SIGN * imu_gyro_scale;
-
-    // 磁力计数据（应用坐标系配置）
-    float mx0 = imu963ra_mag_x * IMU_MAG_X_SIGN;
-    float my0 = imu963ra_mag_y * IMU_MAG_Y_SIGN;
-    float mz0 = imu963ra_mag_z * IMU_MAG_Z_SIGN;
-
-    // 磁力计轴旋转（修正坐标系差异）
-    #if IMU_MAG_AXIS_ROTATE == 0
-    mag.x = mx0;
-    mag.y = my0;
-    mag.z = mz0;
-    #elif IMU_MAG_AXIS_ROTATE == 1
-    mag.x = my0;
-    mag.y = -mx0;
-    mag.z = mz0;
-    #elif IMU_MAG_AXIS_ROTATE == 2
-    mag.x = -mx0;
-    mag.y = -my0;
-    mag.z = mz0;
-    #elif IMU_MAG_AXIS_ROTATE == 3
-    mag.x = -my0;
-    mag.y = mx0;
-    mag.z = mz0;
-    #endif
-
-    // 调用Madgwick算法更新姿态
-    MadgwickQuaternionUpdate(acc, gyro, mag, dt);
-
-    // 四元数转欧拉角
-    // Roll：绕X轴旋转，范围[-90°, 90°]
-    Roll_Result = atan2f(2.0f * (madgwick_q1 * madgwick_q2 + madgwick_q3 * madgwick_q4), 1.0f - 2.0f * (madgwick_q2 * madgwick_q2 + madgwick_q3 * madgwick_q3)) * RAD2DEG;
-    // Pitch：绕Y轴旋转，范围[-90°, 90°]
-    Pitch_Result = asinf(2.0f * (madgwick_q1 * madgwick_q3 - madgwick_q4 * madgwick_q2)) * RAD2DEG;  
-    // Yaw：绕Z轴旋转，范围[-180°, 180°]
-    Yaw_Result = atan2f(2.0f * (madgwick_q1 * madgwick_q4 + madgwick_q2 * madgwick_q3), 1.0f - 2.0f * (madgwick_q3 * madgwick_q3 + madgwick_q4 * madgwick_q4)) * RAD2DEG;
-}
-
-/*******************************************************************************************************************/
-/*--------------------------------------------------------------------------------------------------[E] 姿态解算 [E]*/
-/*******************************************************************************************************************/
-
-
-/*******************************************************************************************************************/
-/*[S] 工具函数 [S]--------------------------------------------------------------------------------------------------*/
-/*******************************************************************************************************************/
-
-//-------------------------------------------------------------------------------------------------------------------
-// 函数简介     获取校准后的IMU数据
-// 输入参数     指向输出变量的指针（加速度计、陀螺仪、磁力计各三轴）
-// 备注信息     用于调试或数据监控，返回经过校准的原始数据
-//-------------------------------------------------------------------------------------------------------------------
-void IMU963RA_Get_Calibrated_Data(float *acc_x, float *acc_y, float *acc_z, 
-                                        float *gyro_x, float *gyro_y, float *gyro_z, 
-                                        float *mag_x, float *mag_y, float *mag_z)
-{
-    if (calib_state != CALIB_STATE_DONE)
-    {
-        return;
-    }
-
-    *acc_x = (float)imu963ra_acc_x;
-    *acc_y = (float)imu963ra_acc_y;
-    *acc_z = (float)imu963ra_acc_z;
-    
-    *gyro_x = (float)imu963ra_gyro_x - gyro_off_x;
-    *gyro_y = (float)imu963ra_gyro_y - gyro_off_y;
-    *gyro_z = (float)imu963ra_gyro_z - gyro_off_z;
-    
-    *mag_x = (float)imu963ra_mag_x;
-    *mag_y = (float)imu963ra_mag_y;
-    *mag_z = (float)imu963ra_mag_z;
-} 
-
-//-------------------------------------------------------------------------------------------------------------------
-// 函数简介     重置Yaw角（归零）
-// 备注信息     将当前方向设为0°，用于定角度转向的起点
-//-------------------------------------------------------------------------------------------------------------------
-void IMU963RA_Reset_Yaw(void)
-{
-     // 重置四元数为初始姿态（水平朝北）
-    madgwick_q1 = 1.0f;
-    madgwick_q2 = 0.0f;
-    madgwick_q3 = 0.0f;
-    madgwick_q4 = 0.0f;
-    
-    // 重置姿态角输出变量
-    Yaw_Result = 0.0f;
+    Yaw_Result = atan2f(2.0f * (q1 * q2 + q0 * q3), -2.0f * q2 * q2 - 2.0f * q3 * q3 + 1.0f) * 180.0f / PI;
     Roll_Result = 0.0f;
     Pitch_Result = 0.0f;
-}  
+}
+
 /*******************************************************************************************************************/
-/*--------------------------------------------------------------------------------------------------[E] 工具函数 [E]*/
+/*-----------------------------------------------------------------------------------------------[E] 三轴姿态解算 [E]*/
+/*******************************************************************************************************************/
+#elif IMU_ANALYSIS_MODE == 6 // 六轴
+/*******************************************************************************************************************/
+/*-[S] 六轴姿态解算 [S]----------------------------------------------------------------------------------------------*/
 /*******************************************************************************************************************/
 
+// 六轴姿态解算变量
+Mahony_AHRS_StructDef six_axis = {
+    .q = {1.0f, 0.0f, 0.0f, 0.0f},
+    .Kp = 2.0f,
+    .Ki = 0.005f,
+    .quick_Kp = 10.0f,
+    .quick_Ki = 0.005f,
+    .exInt = 0.0f,
+    .eyInt = 0.0f,
+    .ezInt = 0.0f,
+    .quick_mode = 1
+};
+
+static void SixAxis_Update(void)
+{
+    float gx, gy, gz;
+    float ax, ay, az;
+    float q0, q1, q2, q3;
+    float halfT;
+    float norm;
+    float vx, vy, vz;
+    float ex, ey, ez;
+    float Kp, Ki;
+
+    IMU_Acc_Apply(&ax, &ay, &az);
+    IMU_Gyro_Apply(&gyro_cal, &gx, &gy, &gz);
+
+    gx = gx * PI / 180.0f;
+    gy = gy * PI / 180.0f;
+    gz = gz * PI / 180.0f;
+
+    q0 = six_axis.q.q0;
+    q1 = six_axis.q.q1;
+    q2 = six_axis.q.q2;
+    q3 = six_axis.q.q3;
+
+    Kp = six_axis.quick_mode ? six_axis.quick_Kp : six_axis.Kp;
+    Ki = six_axis.quick_mode ? six_axis.quick_Ki : six_axis.Ki;
+
+    norm = invSqrt(ax * ax + ay * ay + az * az);
+    ax *= norm;
+    ay *= norm;
+    az *= norm;
+
+    vx = 2.0f * (q1 * q3 - q0 * q2);
+    vy = 2.0f * (q0 * q1 + q2 * q3);
+    vz = q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3;
+
+    ex = (ay * vz - az * vy);
+    ey = (az * vx - ax * vz);
+    ez = (ax * vy - ay * vx);
+
+    if (Ki > 0.0f)
+    {
+        six_axis.exInt += ex * Ki;
+        six_axis.eyInt += ey * Ki;
+        six_axis.ezInt += ez * Ki;
+    }
+    else
+    {
+        six_axis.exInt = 0.0f;
+        six_axis.eyInt = 0.0f;
+        six_axis.ezInt = 0.0f;
+    }
+
+    gx += Kp * ex + six_axis.exInt;
+    gy += Kp * ey + six_axis.eyInt;
+    gz += Kp * ez + six_axis.ezInt;
+
+    halfT = 0.5f * DELTA_T_6AXIS;
+
+    q0 += (-q1 * gx - q2 * gy - q3 * gz) * halfT;
+    q1 += ( q0 * gx + q2 * gz - q3 * gy) * halfT;
+    q2 += ( q0 * gy - q1 * gz + q3 * gx) * halfT;
+    q3 += ( q0 * gz + q1 * gy - q2 * gx) * halfT;
+
+    norm = invSqrt(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
+    six_axis.q.q0 = q0 * norm;
+    six_axis.q.q1 = q1 * norm;
+    six_axis.q.q2 = q2 * norm;
+    six_axis.q.q3 = q3 * norm;
+
+    Roll_Result = atan2f(2.0f * (q0 * q1 + q2 * q3), 1.0f - 2.0f * (q1 * q1 + q2 * q2)) * 180.0f / PI;
+    Pitch_Result = asinf(2.0f * (q0 * q2 - q3 * q1)) * 180.0f / PI;
+    Yaw_Result = atan2f(2.0f * (q1 * q2 + q0 * q3), -2.0f * q2 * q2 - 2.0f * q3 * q3 + 1.0f) * 180.0f / PI;
+}
+
+/*******************************************************************************************************************/
+/*-----------------------------------------------------------------------------------------------[E] 六轴姿态解算 [E]*/
+/*******************************************************************************************************************/
+#elif IMU_ANALYSIS_MODE == 9 // 九轴
+/*******************************************************************************************************************/
+/*-[S] 九轴姿态解算 [S]----------------------------------------------------------------------------------------------*/
+/*******************************************************************************************************************/
+
+// 九轴姿态解算变量
+NineAxis_StructDef nine_axis = {
+    .mahony = {
+        .q = {1.0f, 0.0f, 0.0f, 0.0f},
+        .Kp = 2.0f,
+        .Ki = 0.005f,
+        .quick_Kp = 10.0f,
+        .quick_Ki = 0.005f,
+        .exInt = 0.0f,
+        .eyInt = 0.0f,
+        .ezInt = 0.0f,
+        .quick_mode = 1
+    },
+    .mag_declination = 0.0f
+};
+
+static void NineAxis_Update(void)
+{
+    float gx, gy, gz;
+    float ax, ay, az;
+    int16_t mx_raw, my_raw, mz_raw;
+    float mx, my, mz;
+    float q0, q1, q2, q3;
+    float halfT;
+    float norm;
+    float vx, vy, vz;
+    float wx, wy, wz;
+    float hx, hy, bx, bz;
+    float ex, ey, ez;
+    float Kp, Ki;
+
+    IMU_Acc_Apply(&ax, &ay, &az);
+    IMU_Gyro_Apply(&gyro_cal, &gx, &gy, &gz);
+    IMU_Mag_Apply(&mag_cal, &mx_raw, &my_raw, &mz_raw);
+
+    gx = gx * PI / 180.0f;
+    gy = gy * PI / 180.0f;
+    gz = gz * PI / 180.0f;
+
+    mx = (float)mx_raw;
+    my = (float)my_raw;
+    mz = (float)mz_raw;
+
+    q0 = nine_axis.mahony.q.q0;
+    q1 = nine_axis.mahony.q.q1;
+    q2 = nine_axis.mahony.q.q2;
+    q3 = nine_axis.mahony.q.q3;
+
+    Kp = nine_axis.mahony.quick_mode ? nine_axis.mahony.quick_Kp : nine_axis.mahony.Kp;
+    Ki = nine_axis.mahony.quick_mode ? nine_axis.mahony.quick_Ki : nine_axis.mahony.Ki;
+
+    norm = invSqrt(ax * ax + ay * ay + az * az);
+    ax *= norm;
+    ay *= norm;
+    az *= norm;
+
+    norm = invSqrt(mx * mx + my * my + mz * mz);
+    mx *= norm;
+    my *= norm;
+    mz *= norm;
+
+    float q0q0 = q0 * q0;
+    float q0q1 = q0 * q1;
+    float q0q2 = q0 * q2;
+    float q0q3 = q0 * q3;
+    float q1q1 = q1 * q1;
+    float q1q2 = q1 * q2;
+    float q1q3 = q1 * q3;
+    float q2q2 = q2 * q2;
+    float q2q3 = q2 * q3;
+    float q3q3 = q3 * q3;
+
+    vx = 2.0f * (q1q3 - q0q2);
+    vy = 2.0f * (q0q1 + q2q3);
+    vz = q0q0 - q1q1 - q2q2 + q3q3;
+
+    hx = 2.0f * (mx * (0.5f - q2q2 - q3q3) + my * (q1q2 - q0q3) + mz * (q1q3 + q0q2));
+    hy = 2.0f * (mx * (q1q2 + q0q3) + my * (0.5f - q1q1 - q3q3) + mz * (q2q3 - q0q1));
+    bx = sqrtf(hx * hx + hy * hy);
+    bz = 2.0f * (mx * (q1q3 - q0q2) + my * (q2q3 + q0q1) + mz * (0.5f - q1q1 - q2q2));
+
+    wx = 2.0f * bx * (0.5f - q2q2 - q3q3) + 2.0f * bz * (q1q3 - q0q2);
+    wy = 2.0f * bx * (q1q2 - q0q3) + 2.0f * bz * (q0q1 + q2q3);
+    wz = 2.0f * bx * (q0q2 + q1q3) + 2.0f * bz * (0.5f - q1q1 - q2q2);
+
+    ex = (ay * vz - az * vy) + (my * wz - mz * wy);
+    ey = (az * vx - ax * vz) + (mz * wx - mx * wz);
+    ez = (ax * vy - ay * vx) + (mx * wy - my * wx);
+
+    if (Ki > 0.0f)
+    {
+        nine_axis.mahony.exInt += ex * Ki;
+        nine_axis.mahony.eyInt += ey * Ki;
+        nine_axis.mahony.ezInt += ez * Ki;
+    }
+    else
+    {
+        nine_axis.mahony.exInt = 0.0f;
+        nine_axis.mahony.eyInt = 0.0f;
+        nine_axis.mahony.ezInt = 0.0f;
+    }
+
+    gx += Kp * ex + nine_axis.mahony.exInt;
+    gy += Kp * ey + nine_axis.mahony.eyInt;
+    gz += Kp * ez + nine_axis.mahony.ezInt;
+
+    halfT = 0.5f * DELTA_T_9AXIS;
+
+    q0 += (-q1 * gx - q2 * gy - q3 * gz) * halfT;
+    q1 += ( q0 * gx + q2 * gz - q3 * gy) * halfT;
+    q2 += ( q0 * gy - q1 * gz + q3 * gx) * halfT;
+    q3 += ( q0 * gz + q1 * gy - q2 * gx) * halfT;
+
+    norm = invSqrt(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
+    nine_axis.mahony.q.q0 = q0 * norm;
+    nine_axis.mahony.q.q1 = q1 * norm;
+    nine_axis.mahony.q.q2 = q2 * norm;
+    nine_axis.mahony.q.q3 = q3 * norm;
+
+    Roll_Result = atan2f(2.0f * (q0 * q1 + q2 * q3), 1.0f - 2.0f * (q1 * q1 + q2 * q2)) * 180.0f / PI;
+    Pitch_Result = asinf(2.0f * (q0 * q2 - q3 * q1)) * 180.0f / PI;
+    Yaw_Result = atan2f(2.0f * (q1 * q2 + q0 * q3), -2.0f * q2 * q2 - 2.0f * q3 * q3 + 1.0f) * 180.0f / PI;
+}
+
+/*******************************************************************************************************************/
+/*-----------------------------------------------------------------------------------------------[E] 九轴姿态解算 [E]*/
+/*******************************************************************************************************************/
 #endif
 
-
-
-
-
-
-// 六轴数据的解算
-#if (IMU_ANALYSIS_USE_MAG == 0)
+/*******************************************************************************************************************/
+/*[S] 姿态更新主函数 [S]------------------------------------------------------------------------------------------*/
+/*******************************************************************************************************************/
 
 //-------------------------------------------------------------------------------------------------------------------
-// 函数简介     IMU963RA 获取六轴原始数据
-// 使用示例     imu963ra_get_data();                                              // 执行该函数后，直接查看对应的变量即可
-// 备注信息     定时器定时中断定时调用该函数，获取 IMU963RA 原始数据
+// 函数简介     IMU姿态解算主函数
+// 备注信息     在定时器中断中调用，根据IMU_ANALYSIS_MODE或YAW_ONLY_ANALYSIS_MODE选择解算模式
 //-------------------------------------------------------------------------------------------------------------------
-// IMU963RA 原始数据变量
-// 加速度计原始值
-// imu963ra_acc_x           imu963ra_acc_y          imu963ra_acc_z
-// 陀螺仪原始值
-// imu963ra_gyro_x          imu963ra_gyro_y         imu963ra_gyro_z
-void imu963ra_update_data(void)
+void IMU_Update_Analysis(void)
 {
-    imu963ra_get_acc();
-    imu963ra_get_gyro();
+    #if YAW_ONLY_ANALYSIS_MODE > 0
+        #if YAW_ONLY_ANALYSIS_MODE == 1 
+            Yaw_Result = Mag_Get_Yaw_Update();
+            Roll_Result = 0.0f;
+            Pitch_Result = 0.0f;
+        #elif YAW_ONLY_ANALYSIS_MODE == 2
+            Yaw_Result = Mahony_YawOnly_Update(DELTA_T_9AXIS);
+            Roll_Result = 0.0f;
+            Pitch_Result = 0.0f;
+        #elif YAW_ONLY_ANALYSIS_MODE == 3
+            Yaw_Result = Madgwick_YawOnly_Update(DELTA_T_9AXIS);
+            Roll_Result = 0.0f;
+            Pitch_Result = 0.0f;
+        #elif YAW_ONLY_ANALYSIS_MODE == 4
+            Yaw_Result = TiltMagYaw_Update(DELTA_T_9AXIS);
+            Roll_Result = 0.0f;
+            Pitch_Result = 0.0f;
+        #endif
+
+    #elif IMU_ANALYSIS_MODE == 3
+        ThreeAxis_Update();
+    #elif IMU_ANALYSIS_MODE == 6
+        SixAxis_Update();
+    #elif IMU_ANALYSIS_MODE == 9
+        NineAxis_Update();
+    #endif
 }
 
 /*******************************************************************************************************************/
-/*[S] 零飘校准 [S]--------------------------------------------------------------------------------------------------*/
+/*------------------------------------------------------------------------------------------[E] 姿态更新主函数 [E]*/
 /*******************************************************************************************************************/
-// 上次时间戳（用于计算dt）
-static std::chrono::steady_clock::time_point last_time = std::chrono::steady_clock::now();
+
+
+/*******************************************************************************************************************/
+/*[S] 工具性函数 [S]------------------------------------------------------------------------------------------------*/
+/*******************************************************************************************************************/
 
 //-------------------------------------------------------------------------------------------------------------------
-// 函数简介     获取实际采样时间间隔
-// 返回参数     dt：时间间隔（秒），范围[0.001s, 0.05s]
-// 备注信息     用于姿态解算的时间积分，限制范围避免异常值
+// 函数简介     重置IMU姿态角数据
+// 备注信息     调试性质
 //-------------------------------------------------------------------------------------------------------------------
-// 获取实际采样时间间隔
-static float Get_Real_dt(void)
+void IMU_Reset_Data (void)
 {
-    auto current_time = std::chrono::steady_clock::now();
-    auto time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_time).count();
-    
-    // 限制dt范围
-    float dt = (float)time_diff / 1000.0f;
-    if (dt > 0.05f) dt = 0.05f; // 限制最大dt
-    if (dt < 0.001f) dt = 0.005f; // 限制最小dt
-    
-    last_time = current_time;
-    return dt;
-}
+    // 重置对应算法的中间数据
+    #if YAW_ONLY_ANALYSIS_MODE > 0
+        #if YAW_ONLY_ANALYSIS_MODE == 1
+            yaw_only.mag_get_yaw.yaw_filtered = 0.0f;
+        #elif YAW_ONLY_ANALYSIS_MODE == 2
+            yaw_only.mahony.q.q0 = 1.0f;
+            yaw_only.mahony.q.q1 = 0.0f;
+            yaw_only.mahony.q.q2 = 0.0f;
+            yaw_only.mahony.q.q3 = 0.0f;
+            yaw_only.mahony.exInt = 0.0f;
+            yaw_only.mahony.eyInt = 0.0f;
+            yaw_only.mahony.ezInt = 0.0f;
+            yaw_only.mahony.quick_mode = 1;
+        #elif YAW_ONLY_ANALYSIS_MODE == 3
+            yaw_only.madgwick.q.q0 = 1.0f;
+            yaw_only.madgwick.q.q1 = 0.0f;
+            yaw_only.madgwick.q.q2 = 0.0f;
+            yaw_only.madgwick.q.q3 = 0.0f;
+        #elif YAW_ONLY_ANALYSIS_MODE == 4
+            yaw_only.tilt_mag_yaw.yaw = 0.0f;
+            yaw_only.tilt_mag_yaw.yaw_filtered = 0.0f;
+            yaw_only.tilt_mag_yaw.yaw_error_int = 0.0f;
+        #endif
+    #elif IMU_ANALYSIS_MODE == 3 // 三轴
+        three_axis.q.q0 = 1.0f;
+        three_axis.q.q1 = 0.0f;
+        three_axis.q.q2 = 0.0f;
+        three_axis.q.q3 = 0.0f;
+    #elif IMU_ANALYSIS_MODE == 6 // 六轴
+        six_axis.q.q0 = 1.0f;
+        six_axis.q.q1 = 0.0f;
+        six_axis.q.q2 = 0.0f;
+        six_axis.q.q3 = 0.0f;
+        six_axis.exInt = 0.0f;
+        six_axis.eyInt = 0.0f;
+        six_axis.ezInt = 0.0f;
+        six_axis.quick_mode = 1;
+    #elif IMU_ANALYSIS_MODE == 9 // 九轴
+        nine_axis.mahony.q.q0 = 1.0f;
+        nine_axis.mahony.q.q1 = 0.0f;
+        nine_axis.mahony.q.q2 = 0.0f;
+        nine_axis.mahony.q.q3 = 0.0f;
+        nine_axis.mahony.exInt = 0.0f;
+        nine_axis.mahony.eyInt = 0.0f;
+        nine_axis.mahony.ezInt = 0.0f;
+        nine_axis.mahony.quick_mode = 1;
+    #endif
 
-// 陀螺仪零飘校准相关变量
-static int32_t sum_gx = 0, sum_gy = 0, sum_gz = 0; // 陀螺仪数据累加和
-static float gyro_off_x = 0, gyro_off_y = 0, gyro_off_z = 0; // 陀螺仪零点偏移量
-
-//-------------------------------------------------------------------------------------------------------------------
-// 函数简介     开始校准
-// 备注信息     初始化校准状态，准备收集陀螺仪零飘数据
-//-------------------------------------------------------------------------------------------------------------------
-void IMU963RA_Calibration_Start(void)
-{
-    calib_state = CALIB_STATE_RUNNING; // 设置状态为校准中
-    calib_count = 0;
-    sum_gx = 0;
-    sum_gy = 0;
-    sum_gz = 0;
-}
-
-//-------------------------------------------------------------------------------------------------------------------
-// 函数简介     校准状态检查
-// 返回参数     校准状态：0-未校准，1-校准中，2-已校准
-// 备注信息     需要配合IMU963RA_analysis_enable标志位使用
-//-------------------------------------------------------------------------------------------------------------------
-int8_t IMU963RA_Calibration_Check(void)
-{
-    if(calib_state == CALIB_STATE_DONE)
-    {
-        return 2; // 已校准完成
-    }
-
-    if(calib_state == CALIB_STATE_SPARE)
-    {
-        return 0; // 未开始校准
-    }
-    
-    // 检查是否允许收集数据
-    if(IMU963RA_analysis_enable)
-    {
-        imu963ra_update_data();
-        // 收集数据
-        sum_gx += imu963ra_gyro_x;
-        sum_gy += imu963ra_gyro_y;
-        sum_gz += imu963ra_gyro_z;
-        calib_count++;
-
-        IMU963RA_analysis_enable = 0;
-        
-        if(calib_count >= CALIB_TARGET_SAMPLES)
-        {
-            gyro_off_x = (float)sum_gx / CALIB_TARGET_SAMPLES;
-            gyro_off_y = (float)sum_gy / CALIB_TARGET_SAMPLES;
-            gyro_off_z = (float)sum_gz / CALIB_TARGET_SAMPLES;
-            
-            calib_state = CALIB_STATE_DONE;
-        }
-    }
-    
-    return 1; // 校准中
+    // 重置姿态结果
+    Yaw_Result = 0.0f;    // 偏航角（Yaw）
+    Roll_Result = 0.0f;   // 横滚角（Roll）
+    Pitch_Result = 0.0f;  // 俯仰角（Pitch）
 }
 /*******************************************************************************************************************/
-/*--------------------------------------------------------------------------------------------------[E] 零飘校准 [E]*/
-/*******************************************************************************************************************/
-
-
-/*******************************************************************************************************************/
-/*[S] 卡尔曼滤波 [S]------------------------------------------------------------------------------------------------*/
-/*******************************************************************************************************************/
-
-// 卡尔曼滤波开关：1=使用卡尔曼滤波，0=使用互补滤波
-#define USE_KALMAN_FILTER 1
-
-//Q_angle（角度过程噪声）
-//数值越大，越信任陀螺仪（动态响应快，但噪声大）；
-//数值越小，越信任加速度计（静态准，但动态延迟大）；
-//平衡车推荐初始值：0.001f~0.005f
-
-//Q_bias（陀螺仪零飘过程噪声）
-//数值越大，对零飘的动态补偿越灵敏，但容易引入抖动；
-//数值越小，零飘补偿越平滑，但响应慢；
-//平衡车推荐初始值：0.003f~0.01f
-
-//R_measure（加速度计测量噪声）
-//数值越大，越不信任加速度计（抗振动干扰能力强，但静态误差大）；
-//数值越小，越信任加速度计（静态准，但易受动态加速度干扰）；
-//平衡车推荐初始值：0.03f~0.1f
-
-// 卡尔曼滤波结构体定义
-typedef struct {
-    float Q_angle;        // 角度过程噪声协方差
-    float Q_bias;         // 偏差过程噪声协方差
-    float R_measure;      // 测量噪声协方差
-    
-    float angle;          // 滤波后角度
-    float bias;           // 陀螺仪偏差
-    float rate;           // 去偏后的角速度
-    
-    float P[2][2];        // 误差协方差矩阵
-} KalmanFilter;
-
-// 定义Roll/Pitch轴卡尔曼滤波器实例
-static KalmanFilter kf_roll = {0};
-static KalmanFilter kf_pitch = {0};
-
-// 卡尔曼滤波初始化函数
-static void Kalman_Init(KalmanFilter* kf, float Q_angle, float Q_bias, float R_measure)
-{
-    kf->Q_angle = Q_angle;
-    kf->Q_bias = Q_bias;
-    kf->R_measure = R_measure;
-
-    kf->angle = 0.0f;
-    kf->bias = 0.0f;
-    
-    kf->P[0][0] = 0.0f;
-    kf->P[0][1] = 0.0f;
-    kf->P[1][0] = 0.0f;
-    kf->P[1][1] = 0.0f;
-}
-
-// 卡尔曼滤波计算核心函数
-static float Kalman_Calculate(KalmanFilter* kf, float newAngle, float newRate, float dt)
-{
-    // 预测步骤
-    kf->rate = newRate - kf->bias;
-    kf->angle += dt * kf->rate;
-    
-    // 更新误差协方差矩阵
-    kf->P[0][0] += dt * (dt * kf->P[1][1] - kf->P[0][1] - kf->P[1][0] + kf->Q_angle);
-    kf->P[0][1] -= dt * kf->P[1][1];
-    kf->P[1][0] -= dt * kf->P[1][1];
-    kf->P[1][1] += kf->Q_bias * dt;
-    
-    // 更新步骤
-    float S = kf->P[0][0] + kf->R_measure;   // 创新协方差
-    float K[2];                               // 卡尔曼增益
-    K[0] = kf->P[0][0] / S;
-    K[1] = kf->P[1][0] / S;
-    
-    float y = newAngle - kf->angle;          // 角度残差
-    kf->angle += K[0] * y;                   // 更新角度
-    kf->bias += K[1] * y;                    // 更新偏差
-    
-    // 更新后验误差协方差
-    float P00_temp = kf->P[0][0];
-    float P01_temp = kf->P[0][1];
-    kf->P[0][0] -= K[0] * P00_temp;
-    kf->P[0][1] -= K[0] * P01_temp;
-    kf->P[1][0] -= K[1] * P00_temp;
-    kf->P[1][1] -= K[1] * P01_temp;
-    
-    return kf->angle;
-}
-
-// 动态调整R_measure（根据加速度计模长判断运动状态）
-
-/*******************************************************************************************************************/
-/*------------------------------------------------------------------------------------------------[E] 卡尔曼滤波 [E]*/
-/*******************************************************************************************************************/
-
-
-/*******************************************************************************************************************/
-/*[S] 姿态解算+滤波 [S]----------------------------------------------------------------------------------------------*/
-/*******************************************************************************************************************/
-
-// 中间变量
-static float RollAcc = 0.0f;         // 加速度计计算的横滚角
-static float Roll = 0.0f;            // 融合后的横滚角
-
-static float Yaw = 0.0f;             // 偏航角
-
-static float PitchAcc = 0.0f;        // 加速度计算的俯仰角
-static float Pitch = 0.0f;            // 融合后的俯仰角
-
-static float Roll_Temp = 0.0f;        // 横滚角 中间处理值
-static float Yaw_Temp = 0.0f;         // 偏航角 中间处理值
-static float Pitch_Temp = 0.0f;       // 俯仰角 中间处理值
-
-// 低通滤波系数（0.2 = 强滤波，0.5 = 中等，0.8 = 弱滤波）
-#define MPU6050_LOW_PASS_FILTER 0.3f
-// 输出死区系数
-#define MPU6050_OUTPUT_DEAD_ZONE 0.05f
-// Yaw 轴陀螺仪增益系数（用于修正 Yaw 变化偏小的问题）
-#define YAW_GYRO_GAIN  1.38f
-
-// 固化解算系数
-// 弧度转角度
-const float mpu6050_const_data1 = (1.0f / M_PI) * 180.0f;
-// rad/s 转 °/s 的转换系数
-const float rad_to_deg_per_s = (180.0f / M_PI);
-
-// IMU963RA 姿态解算
-void IMU963RA_Analysis_Update(void)
-{
-    // 只有在校准完成后才执行姿态解算
-    if (calib_state != CALIB_STATE_DONE)
-    {
-        return;  // 未校准完成，不执行解算
-    }
-    
-    // 静态初始化卡尔曼滤波器（仅第一次执行）
-    static uint8_t kalman_init_flag = 0;
-    if(kalman_init_flag == 0 && USE_KALMAN_FILTER)
-    {
-        // 卡尔曼参数初始化（平衡车推荐值）
-        Kalman_Init(&kf_roll, 0.003f, 0.003f, 0.03f);
-        Kalman_Init(&kf_pitch, 0.003f, 0.003f, 0.03f);
-        kalman_init_flag = 1;
-    }
-    
-    // 应用校准与中间变量赋值（应用坐标系配置）
-    float ax = imu963ra_acc_x * IMU_ACC_X_SIGN;
-    float ay = imu963ra_acc_y * IMU_ACC_Y_SIGN;
-    float az = imu963ra_acc_z * IMU_ACC_Z_SIGN;
-
-    float gx = (imu963ra_gyro_x - gyro_off_x) * IMU_GYRO_X_SIGN;
-    float gy = (imu963ra_gyro_y - gyro_off_y) * IMU_GYRO_Y_SIGN;
-    float gz = (imu963ra_gyro_z - gyro_off_z) * IMU_GYRO_Z_SIGN;
-
-    // 输入死区
-    if(-4 < gx && gx < 4) { gx = 0; }
-    if(-4 < gy && gy < 4) { gy = 0; }
-    if(-4 < gz && gz < 4) { gz = 0; }
-    
-    // 使用从IIO子系统读取的真实scale值，陀螺仪scale已经是rad/s
-    float gyro_roll_rate  = (float)gx * imu_gyro_scale * rad_to_deg_per_s;
-    float gyro_pitch_rate = (float)gy * imu_gyro_scale * rad_to_deg_per_s;
-    
-    // 横滚角加速度计计算
-    RollAcc   = atan2f((float)ay, (float)az) * mpu6050_const_data1;
-    // 俯仰角加速度计计算
-    PitchAcc  = -atan2f((float)ax, (float)az) * mpu6050_const_data1;
-    
-    float dt = Get_Real_dt();
-    
-#if USE_KALMAN_FILTER
-    // 卡尔曼滤波模式（Roll/Pitch轴）
-    // 使用固定的R_measure值
-    kf_roll.R_measure  = 0.03f;
-    kf_pitch.R_measure = 0.03f;
-    
-    // 卡尔曼滤波计算
-    Roll  = Kalman_Calculate(&kf_roll, RollAcc, gyro_roll_rate, dt);
-    Pitch = Kalman_Calculate(&kf_pitch, PitchAcc, gyro_pitch_rate, dt);
-#else
-    // 互补滤波模式（使用真实的scale值）
-    float RollGyro  = Roll + (float)gx * imu_gyro_scale * rad_to_deg_per_s * dt;
-    Roll      = 0.005 * RollAcc + (1 - 0.005) * RollGyro;
-    
-    float PitchGyro = Pitch + (float)gy * imu_gyro_scale * rad_to_deg_per_s * dt;
-    Pitch     = 0.005 * PitchAcc + (1 - 0.005) * PitchGyro;
-#endif
-    
-    // 偏航角计算：仅陀螺仪积分（无加速度计校准，会漂移）
-    Yaw       += (float)gz * imu_gyro_scale * rad_to_deg_per_s * dt * YAW_GYRO_GAIN;
-    
-    // 一阶低通滤波
-    Roll_Temp  = MPU6050_LOW_PASS_FILTER * Roll + (1 - MPU6050_LOW_PASS_FILTER) * Roll_Temp;
-    Yaw_Temp   = MPU6050_LOW_PASS_FILTER * Yaw + (1 - MPU6050_LOW_PASS_FILTER) * Yaw_Temp;
-    Pitch_Temp = MPU6050_LOW_PASS_FILTER * Pitch + (1 - MPU6050_LOW_PASS_FILTER) * Pitch_Temp;
-    
-    // 输出死区
-    if (fabs(Roll_Result - Roll_Temp) > MPU6050_OUTPUT_DEAD_ZONE) { Roll_Result = Roll_Temp; }
-    if (fabs(Yaw_Result - Yaw_Temp) > MPU6050_OUTPUT_DEAD_ZONE) { Yaw_Result = Yaw_Temp; }
-    if (fabs(Pitch_Result - Pitch_Temp) > MPU6050_OUTPUT_DEAD_ZONE) { Pitch_Result = Pitch_Temp; }
-}
-/*******************************************************************************************************************/
-/*----------------------------------------------------------------------------------------------[E] 姿态解算+滤波 [E]*/
-/*******************************************************************************************************************/
-
-
-/*******************************************************************************************************************/
-/*[S] 工具函数 [S]--------------------------------------------------------------------------------------------------*/
-/*******************************************************************************************************************/
-
-void IMU963RA_Get_Calibrated_Data(float *acc_x, float *acc_y, float *acc_z, 
-                                        float *gyro_x, float *gyro_y, float *gyro_z)
-{
-    if (calib_state != CALIB_STATE_DONE)
-    {
-        return;  // 未校准完成，不执行校准
-    }
-
-    // 加速度无零飘
-    *acc_x = (float)imu963ra_acc_x;
-    *acc_y = (float)imu963ra_acc_y;
-    *acc_z = (float)imu963ra_acc_z;
-    
-    // 陀螺仪赋值
-    *gyro_x = (float)imu963ra_gyro_x - gyro_off_x;
-    *gyro_y = (float)imu963ra_gyro_y - gyro_off_y;
-    *gyro_z = (float)imu963ra_gyro_z - gyro_off_z;
-} 
-
-// 清零Yaw角
-void IMU963RA_Reset_Yaw(void)
-{
-    Yaw = 0.0f;
-    Yaw_Temp = 0.0f;
-    Yaw_Result = 0.0f;
-}
-/*******************************************************************************************************************/
-/*--------------------------------------------------------------------------------------------------[E] 工具函数 [E]*/
+/*------------------------------------------------------------------------------------------------[E] 工具性函数 [E]*/
 /*******************************************************************************************************************/
 
 
 
 
 
-
-#endif

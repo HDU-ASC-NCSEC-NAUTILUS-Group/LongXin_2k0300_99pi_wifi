@@ -32,6 +32,7 @@
 ********************************************************************************************************************/
 
 #include "zf_common_headfile.h"
+#include "uart2.h"
 
 #include "defines.h"
 #include "Menu.h"
@@ -52,7 +53,7 @@ timer_fd *pit_timer_200ms;
 void pit_callback_10ms()
 {
     Key_Tick();
-    IMU963RA_analysis_enable = 1;
+    IMU_D_and_A_Enable = 1;
 }
 
 void pit_callback_200ms()
@@ -101,8 +102,6 @@ int main(int, char**)
     // 外设初始化
     Peripheral_Init();
 
-    // 初始化IMU scale值
-
     // 创建10ms定时器
     pit_timer_10ms = new timer_fd(10, pit_callback_10ms);
     pit_timer_10ms->start();  
@@ -112,6 +111,6 @@ int main(int, char**)
 
     while(1)
     {
-//        Menu_Show();
+        Menu_Show();
     }
 }

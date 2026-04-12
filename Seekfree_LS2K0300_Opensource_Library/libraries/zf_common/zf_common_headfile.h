@@ -74,7 +74,7 @@
 // //#include "zf_driver_soft_spi.h"
 // #include "zf_driver_spi.h"
 // #include "zf_driver_timer.h"
-// #include "zf_driver_uart.h"
+#include "zf_driver_uart.h"
 // #include "zf_driver_usb_cdc.h"
 // #include "zf_driver_usb_cdc.h"
 #include "zf_driver_udp.h"
