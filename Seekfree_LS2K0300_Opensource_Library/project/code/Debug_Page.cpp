@@ -11,7 +11,7 @@
 #include "Key.h"
 #include "Motor.h"
 #include "param_config.h"
-#include "UART2.h"
+#include "uart2.h"
 
 
 /*******************************************************************************************************************/
@@ -564,8 +564,7 @@ int Debug_IMU963RA(void)
                         break;  // 中止零飘校准
                     }        
                 }
-                IMU_Reset_Data();
-                
+                IMU_Reset_Data();               
             }
             else // 校准磁力计
             {                   
@@ -586,7 +585,6 @@ int Debug_IMU963RA(void)
                     }
                 }
                 IMU_Reset_Data();
-                     
             }           
         }
         else if (Key_Check(KEY_NAME_BACK,KEY_SINGLE))
@@ -634,34 +632,104 @@ int Debug_IMU963RA(void)
 // #   #   ###   ####   #####  #####  
 // #   #  #   #  #   #    #        #  
 // #   #  #####  ####     #    #####  
-// #   #  #   #  #  #     #    #      
+// #   #  #   #  #  #     #    #        
 //  ###   #   #  #   #    #    #####  
 //
-// [三级界面]IMU963RA调试
-int Debug_IMU963RA(void)
+// [三级界面]UART2调试
+// P42   TX
+// P43   RX
+int Debug_UART2(void)
 {
-    Debug_IMU963RA_UI();
-
+    Debug_UART2_UI();
+    
+    // UART2接收缓冲区
+    static uint8_t uart2_rx_buffer[100];
+    static uint32_t uart2_rx_length = 0;
+    
+    // 初始化UART2
+    if (uart2_init() != 0) {
+        ips200_show_string(32, 32, "UART2 Init Failed");
+        // 等待返回
+        while(!Key_Check(KEY_NAME_BACK,KEY_SINGLE)) {
+            // 等待按键
+        }
+        return 0;
+    }
+    
+    // 发送计数器
+    static uint16_t send_count = 0;
+    
     while(1)
     {
-        /* 按键处理*/     
-        // if (Key_Check(KEY_NAME_UP,KEY_SINGLE)) 
-        // {
-
-        // }
-        // else if (Key_Check(KEY_NAME_DOWN,KEY_SINGLE)) 
-        // {
-
-        // }
-        // else if (Key_Check(KEY_NAME_CONFIRM,KEY_SINGLE)) 
-        // {
-
-        // }
-        // else 
+        /* 按键处理*/
         if (Key_Check(KEY_NAME_BACK,KEY_SINGLE))
         {
+            // 关闭UART2
+            uart2_close();
             // 返回上一级界面
             return 0;   
+        }
+        
+        // 检查是否接收到数据
+        int data;
+        while ((data = uart2_receive_byte()) != -1)
+        {
+            if (uart2_rx_length < sizeof(uart2_rx_buffer) - 1)
+            {
+                uart2_rx_buffer[uart2_rx_length++] = data;
+                // 检查是否接收到完整数据包（以\r\n结尾）
+                if (uart2_rx_length >= 2 && 
+                    uart2_rx_buffer[uart2_rx_length-2] == '\r' && 
+                    uart2_rx_buffer[uart2_rx_length-1] == '\n')
+                {
+                    // 确保字符串以null结尾
+                    uart2_rx_buffer[uart2_rx_length] = '\0';
+                    
+                    // 在ips200上显示接收的数据包
+                    char rx_display[20] = {0};
+                    size_t copy_len = (uart2_rx_length < sizeof(rx_display)-1) ? uart2_rx_length : sizeof(rx_display)-1;
+                    strncpy(rx_display, (const char*)uart2_rx_buffer, copy_len);
+                    rx_display[copy_len] = '\0';
+                    // 清除原有显示并显示新数据
+                    ips200_show_string(32, 64, "                    ");
+                    ips200_show_string(32, 64, rx_display);
+                    
+                    // 清空接收缓冲区
+                    uart2_rx_length = 0;
+                }
+            }
+            else
+            {
+                // 缓冲区已满，清空
+                uart2_rx_length = 0;
+            }
+        }
+        
+        // 定时发送数据包（每200ms发送一次）
+        if (Time_200ms_Flag)
+        {
+            Time_200ms_Flag = 0;
+            
+            // 发送数据包："A,256,123\r\n"
+            char send_buffer[20];
+            snprintf(send_buffer, sizeof(send_buffer), "A,%d,%d\r\n", 256, send_count);
+            uart2_send_string(send_buffer);
+            
+            // 在ips200上显示发送的数据包
+            char tx_display[20] = {0};
+            size_t tx_copy_len = (strlen(send_buffer) < sizeof(tx_display)-1) ? strlen(send_buffer) : sizeof(tx_display)-1;
+            strncpy(tx_display, send_buffer, tx_copy_len);
+            tx_display[tx_copy_len] = '\0';
+            // 清除原有显示并显示新数据
+            ips200_show_string(32, 32, "                    ");
+            ips200_show_string(32, 32, tx_display);
+            
+            // 递增计数器
+            send_count++;
+            if (send_count > 999)
+            {
+                send_count = 0;
+            }
         }
     }
 }
