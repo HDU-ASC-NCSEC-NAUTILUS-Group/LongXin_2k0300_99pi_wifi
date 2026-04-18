@@ -42,29 +42,6 @@ timer_fd *pit_timer;
 
 float roll, pitch, yaw;
 
-// 屏幕显示区域定义（基于320x240分辨率）
-#define SCREEN_WIDTH  320
-#define SCREEN_HEIGHT 240
-
-// 布局坐标
-#define TITLE_X        10
-#define TITLE_Y        10
-
-#define SPEED_X        10
-#define SPEED_Y        30
-
-#define ANGLE_X        10
-#define ANGLE_Y        50
-
-#define TIMESTAMP_X    10
-#define TIMESTAMP_Y    70
-
-#define POINTS_START_X 10
-#define POINTS_START_Y 90
-#define POINTS_COL_GAP 75    // 每列宽度
-#define POINTS_ROW_GAP 12    // 每行高度
-#define POINTS_PER_COL 6     // 每列显示6个点
-
 // 里面放入中断代码
 void pit_callback()
 {
@@ -108,55 +85,27 @@ int main(int, char**)
     pit_timer = new timer_fd(1, pit_callback);
     pit_timer->start();
 
-    // 激光雷达解析器初始化
-    RadarParser radar;
-    if (!radar.begin("/dev/ttyUSB0", 230400)) {
-        ips200_set_pen_color(RGB565_RED);
-        ips200_show_string(10, 100, "Radar init failed!");
+    LDSDriver lds;
+    if (!lds.begin("/dev/ttyUSB0", 230400)) {
+        printf("LDS open failed\n");
+        return -1;
     }
-
-    RadarPacket packet;
-
-    // 主循环
+    
+    // 初始化地图：2m范围，5cm分辨率，小车在(120,160)，半径100px，0度朝上（偏移90°）
+    map_init(2.0f, 0.05f, 120, 160, 100, 90.0f);
+    
+    std::vector<LaserPoint> scan;
     while (1) {
-        // object_tracking();  // 红色物块跟踪显示
-        // coordinate_transformation();  // 坐标转换显示
-
-        if (radar.readPacket(packet)) {
-            // 清空数据显示区域（可选，可优化为局部清除）
-            ips200_full(RGB565_WHITE);
-
-            // 显示标题
-            ips200_show_string(TITLE_X, TITLE_Y, "LDR D300 Radar");
-
-            // 显示转速
-            ips200_Printf(SPEED_X, SPEED_Y, "Speed: %d dps", packet.speed);
-
-            // 显示角度范围
-            ips200_Printf(ANGLE_X, ANGLE_Y, "Angle: %.2f -> %.2f", packet.start_angle, packet.end_angle);
-
-            // 显示时间戳
-            ips200_Printf(TIMESTAMP_X, TIMESTAMP_Y, "Time: %u ms", packet.timestamp);
-
-            // 显示测量点（分两列显示，每列6个点）
-            ips200_show_string(POINTS_START_X, POINTS_START_Y - 12, "Points (dist/mm, int):");
-
-            for (int i = 0; i < 12; ++i) {
-                int col = i / POINTS_PER_COL;
-                int row = i % POINTS_PER_COL;
-                int x = POINTS_START_X + col * POINTS_COL_GAP;
-                int y = POINTS_START_Y + row * POINTS_ROW_GAP;
-
-                ips200_Printf(x, y, "%2d: %5d %3d", i, 
-                              packet.points[i].distance, 
-                              packet.points[i].intensity);
-            }
-
-            // 显示CRC（可选）
-            ips200_Printf(10, 220, "CRC: 0x%02X", packet.crc);
+        size_t n = lds.getFullScan(scan, 1500);
+        if (n > 0) {
+            map_update(scan.data(), n);
+        } else {
+            // 超时或出错，仍可重绘（避免黑屏）
+            map_redraw();
         }
-
+        // 无需额外延时，getFullScan 已阻塞
     }
-
+    
+    lds.end();
     return 0;
 }

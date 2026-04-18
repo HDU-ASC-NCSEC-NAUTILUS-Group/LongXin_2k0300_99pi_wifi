@@ -135,6 +135,8 @@
 #include "pid.h"
 #include "quaternion.h"
 #include "radar_parser.h"
+#include "map.h"
+#include "lds_driver.h"
 //===================================================用户自定义文件===================================================
 
 
