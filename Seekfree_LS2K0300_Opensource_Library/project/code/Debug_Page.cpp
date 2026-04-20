@@ -52,8 +52,10 @@ void Debug_MOTOR_UI(void)
     ips200_show_string(10 , 48 , "PWM2:###       ENC2:###");
     ips200_show_string(10 , 64 , "PWM3:###       ENC3:###");
     ips200_show_string(10 , 80 , "PWM4:###       ENC4:###");
-
-    ips200_show_string(10 , 112, "SUM1:###       SUM2:###");
+    ips200_show_string(10 , 96 , "OFFset14:#");
+    ips200_show_string(10 , 112, "OFFset23:#");
+    // 占位符
+    ips200_show_string(10 , 144, "SUM1:###       SUM2:###");
 }
 
 // [三级界面]IMU963RA调试界面
@@ -253,14 +255,25 @@ int Debug_MOTOR(void)
     ips200_show_string(0  ,32 , ">");
 
     // 出于特殊的设置，此处独立了速度的方向和大小的存储
+    // 电机14，23各为一对
     // 建议认定速度为0时方向为1
     uint16_t DUTY[4] = {0,0,0,0};
+
+    // 电机偏移量
+    // 实际上，仍然电机14，23各为一对，只是方便写代码
+    int8_t OFFSET[4] = {0,0,0,0};
+
+    // 电机方向
+    // 4个电机是独立方向的
     int8_t DIR[4] = {1,1,1,1};
 
-    ips200_Printf(50 ,32 , "%d   ", DUTY[0] * DIR[0]);
-    ips200_Printf(50 ,48 , "%d   ", DUTY[1] * DIR[1]);
-    ips200_Printf(50 ,64 , "%d   ", DUTY[2] * DIR[2]);
-    ips200_Printf(50 ,80 , "%d   ", DUTY[3] * DIR[3]);
+    ips200_Printf(50 ,32 , "%d   ", (DUTY[0] + OFFSET[0]) * DIR[0]);
+    ips200_Printf(50 ,48 , "%d   ", (DUTY[1] + OFFSET[1]) * DIR[1]);
+    ips200_Printf(50 ,64 , "%d   ", (DUTY[2] + OFFSET[2]) * DIR[2]);
+    ips200_Printf(50 ,80 , "%d   ", (DUTY[3] + OFFSET[3]) * DIR[3]);
+    ips200_Printf(82 ,96 , "%d   ",OFFSET[0]); 
+    ips200_Printf(82 ,112, "%d   ",OFFSET[1]); 
+
     // 电机位号对应示意图
     // #1 [][][] 3#
     // #1 [][][] 3#
@@ -297,13 +310,13 @@ int Debug_MOTOR(void)
             if (Key_Check(KEY_NAME_UP,KEY_SINGLE)) 
             {
                 Debug_MOTOR_flag --;
-                if (Debug_MOTOR_flag < 1)Debug_MOTOR_flag = 4;
+                if (Debug_MOTOR_flag < 1)Debug_MOTOR_flag = 6;
                 key_pressed = 1;
             }
             else if (Key_Check(KEY_NAME_DOWN,KEY_SINGLE)) 
             {
                 Debug_MOTOR_flag ++;
-                if (Debug_MOTOR_flag > 4)Debug_MOTOR_flag = 1;
+                if (Debug_MOTOR_flag > 6)Debug_MOTOR_flag = 1;
                 key_pressed = 1;
             }
             else if (Key_Check(KEY_NAME_CONFIRM,KEY_SINGLE))
@@ -323,6 +336,7 @@ int Debug_MOTOR(void)
                 ips200_show_string(0  ,16 + Debug_MOTOR_flag * 16, "=");
             }
         }
+
         // 更改模式（有选中目标）
         else if (Debug_MOTOR_flag_temp != 0)
         {   
@@ -330,63 +344,104 @@ int Debug_MOTOR(void)
             {
                 key_pressed = 2;
 
-                // 中间计算变量temp
-                int16_t temp = DIR[Debug_MOTOR_flag_temp - 1] * DUTY[Debug_MOTOR_flag_temp - 1];
-                temp += 5;
-                // 边界处理
-                if (temp > 100)
+                if ( 1 <= Debug_MOTOR_flag_temp && Debug_MOTOR_flag_temp <= 4)
                 {
-                    temp = 100;
-                }
-                else if (temp < -100)
-                {
-                    temp = -100;
-                }
+                    // 中间计算变量temp
+                    int16_t temp = DIR[Debug_MOTOR_flag_temp - 1] * DUTY[Debug_MOTOR_flag_temp - 1];
+                    temp += 5;
+                    // 边界处理
+                    if (temp > 100)
+                    {
+                        temp = 100;
+                    }
+                    else if (temp < -100)
+                    {
+                        temp = -100;
+                    }
 
-                // 速度方向和大小数据更新
-                // 建议认定速度为0时方向为1
-                if (temp >= 0)
-                {
-                    DIR[Debug_MOTOR_flag_temp - 1] = 1;
+                    // 速度方向和大小数据更新
+                    // 建议认定速度为0时方向为1
+                    if (temp >= 0)
+                    {
+                        DIR[Debug_MOTOR_flag_temp - 1] = 1;
+                    }
+                    else
+                    {
+                        DIR[Debug_MOTOR_flag_temp - 1] = -1;
+                    }
+                    DUTY[Debug_MOTOR_flag_temp - 1] = temp * DIR[Debug_MOTOR_flag_temp - 1];
                 }
                 else
                 {
-                    DIR[Debug_MOTOR_flag_temp - 1] = -1;
+                    if (Debug_MOTOR_flag_temp == 5)
+                    {
+                        OFFSET[0] ++;
+                        OFFSET[3] ++;
+                        ips200_Printf(82 ,96 , "%d   ",OFFSET[0]); 
+                        Motor_Set(1, (DUTY[0] + OFFSET[0]) * DIR[0]);
+                    }
+                    else if (Debug_MOTOR_flag_temp == 6)
+                    {
+                        OFFSET[1] ++;
+                        OFFSET[2] ++;
+                        ips200_Printf(82 ,112 , "%d   ",OFFSET[1]); 
+                        Motor_Set(2, (DUTY[1] + OFFSET[1]) * DIR[1]);
+                    }
                 }
-                DUTY[Debug_MOTOR_flag_temp - 1] = temp * DIR[Debug_MOTOR_flag_temp - 1];
 
-                Motor_Set(Debug_MOTOR_flag_temp, DUTY[Debug_MOTOR_flag_temp - 1] * DIR[Debug_MOTOR_flag_temp - 1]);                         
+                Motor_Set(Debug_MOTOR_flag_temp, (DUTY[Debug_MOTOR_flag_temp - 1] + OFFSET[Debug_MOTOR_flag_temp - 1]) * DIR[Debug_MOTOR_flag_temp - 1]);                         
             }
             else if (Key_Check(KEY_NAME_DOWN,KEY_SINGLE)) 
             {
                 key_pressed = 2;
 
-                // 中间计算变量temp
-                int16_t temp = DIR[Debug_MOTOR_flag_temp - 1] * DUTY[Debug_MOTOR_flag_temp - 1];
-                temp -= 5;
-                // 边界处理
-                if (temp > 100)
+                if ( 1 <= Debug_MOTOR_flag_temp && Debug_MOTOR_flag_temp <= 4)
                 {
-                    temp = 100;
-                }
-                else if (temp < -100)
-                {
-                    temp = -100;
-                }
+                    // 中间计算变量temp
+                    int16_t temp = DIR[Debug_MOTOR_flag_temp - 1] * DUTY[Debug_MOTOR_flag_temp - 1];
+                    temp -= 5;
+                    // 边界处理
+                    if (temp > 100)
+                    {
+                        temp = 100;
+                    }
+                    else if (temp < -100)
+                    {
+                        temp = -100;
+                    }
 
-                // 速度方向和大小数据更新
-                // 建议认定速度为0时方向为1
-                if (temp >= 0)
-                {
-                    DIR[Debug_MOTOR_flag_temp - 1] = 1;
+                    // 速度方向和大小数据更新
+                    // 建议认定速度为0时方向为1
+                    if (temp >= 0)
+                    {
+                        DIR[Debug_MOTOR_flag_temp - 1] = 1;
+                    }
+                    else
+                    {
+                        DIR[Debug_MOTOR_flag_temp - 1] = -1;
+                    }
+                    DUTY[Debug_MOTOR_flag_temp - 1] = temp * DIR[Debug_MOTOR_flag_temp - 1];
+                    Motor_Set(Debug_MOTOR_flag_temp, (DUTY[Debug_MOTOR_flag_temp - 1] + OFFSET[Debug_MOTOR_flag_temp - 1]) * DIR[Debug_MOTOR_flag_temp - 1]);
                 }
                 else
                 {
-                    DIR[Debug_MOTOR_flag_temp - 1] = -1;
+                    if (Debug_MOTOR_flag_temp == 5)
+                    {
+                        OFFSET[0] --;
+                        OFFSET[3] --;
+                        ips200_Printf(82 ,96 , "%d   ",OFFSET[0]); 
+                        Motor_Set(1, (DUTY[0] + OFFSET[0]) * DIR[0]);
+                    }
+                    else if (Debug_MOTOR_flag_temp == 6)
+                    {
+                        OFFSET[1] --;
+                        OFFSET[2] --;
+                        ips200_Printf(82 ,112 , "%d   ",OFFSET[1]); 
+                        Motor_Set(2, (DUTY[1] + OFFSET[1]) * DIR[1]);
+                    }
                 }
-                DUTY[Debug_MOTOR_flag_temp - 1] = temp * DIR[Debug_MOTOR_flag_temp - 1];
-
-                Motor_Set(Debug_MOTOR_flag_temp, DUTY[Debug_MOTOR_flag_temp - 1] * DIR[Debug_MOTOR_flag_temp - 1]);
+                
+                                         
             }
             else if ((Key_Check(KEY_NAME_CONFIRM,KEY_SINGLE)) || (Key_Check(KEY_NAME_BACK,KEY_SINGLE)))
             {
@@ -411,8 +466,8 @@ int Debug_MOTOR(void)
 
             ips200_Printf(170,48 , "%d  ", speed1); 
             ips200_Printf(170,80 , "%d  ", speed2);      
-            ips200_Printf(170,112, "%d  ", sum1);
-            ips200_Printf(50 ,112, "%d  ", sum2);
+            ips200_Printf(170,144, "%d  ", sum1);
+            ips200_Printf(50 ,144, "%d  ", sum2);
         }
 
 
@@ -425,11 +480,12 @@ int Debug_MOTOR(void)
                 case 2:DUTY[2] = DUTY[1];break;
                 case 3:DUTY[1] = DUTY[2];break;
                 case 4:DUTY[0] = DUTY[3];break;
+                default:break;
             }
-            ips200_Printf(50 ,32 , "%d   ", DUTY[0] * DIR[0]); 
-            ips200_Printf(50 ,48 , "%d   ", DUTY[1] * DIR[1]); 
-            ips200_Printf(50 ,64 , "%d   ", DUTY[2] * DIR[2]); 
-            ips200_Printf(50 ,80 , "%d   ", DUTY[3] * DIR[3]); 
+            ips200_Printf(50 ,32 , "%d   ", (DUTY[0] + OFFSET[0]) * DIR[0]); 
+            ips200_Printf(50 ,48 , "%d   ", (DUTY[1] + OFFSET[1]) * DIR[1]); 
+            ips200_Printf(50 ,64 , "%d   ", (DUTY[2] + OFFSET[2]) * DIR[2]); 
+            ips200_Printf(50 ,80 , "%d   ", (DUTY[3] + OFFSET[3]) * DIR[3]);
         }
 
 
@@ -441,6 +497,8 @@ int Debug_MOTOR(void)
             ips200_show_string(0  ,48 , " ");
             ips200_show_string(0  ,64 , " ");
             ips200_show_string(0  ,80 , " ");
+            ips200_show_string(0  ,96 , " ");
+            ips200_show_string(0  ,112, " ");
             ips200_show_string(0  ,16 + Debug_MOTOR_flag * 16, ">");
         }
     }

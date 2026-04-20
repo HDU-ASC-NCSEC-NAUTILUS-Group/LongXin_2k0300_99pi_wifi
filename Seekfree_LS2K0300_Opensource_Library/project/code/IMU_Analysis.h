@@ -19,14 +19,14 @@
 // 2 Mahony AHRS（九轴，仅输出Yaw）
 // 3 Madgwick AHRS（九轴，仅输出Yaw）
 // 4 TiltMagYaw（重力投影磁修正陀螺积分）
-#define YAW_ONLY_ANALYSIS_MODE        2
+#define YAW_ONLY_ANALYSIS_MODE        0
 
 // IMU_解算模式设置（全欧拉角解算）
 // 0 关闭
 // 3 三轴
 // 6 六轴
 // 9 九轴
-#define IMU_ANALYSIS_MODE             0
+#define IMU_ANALYSIS_MODE             6
 
 // YAW_ONLY_ANALYSIS_MODE和IMU_ANALYSIS_MODE是互斥的，不能同时开启
 // 仅Yaw输出的解算方法设置优先级高，会覆盖IMU_ANALYSIS_MODE的设置
