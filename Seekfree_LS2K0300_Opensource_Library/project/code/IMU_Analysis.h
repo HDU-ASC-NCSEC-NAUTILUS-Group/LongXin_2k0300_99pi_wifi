@@ -10,26 +10,16 @@
 #define __IMU_ANALYSIS_H__
 
 
-// YAW_ONLY_ANALYSIS_MODE和IMU_ANALYSIS_MODE是互斥的，不能同时开启
-// 仅Yaw输出的解算方法设置优先级高，会覆盖IMU_ANALYSIS_MODE的设置
-
-// 仅Yaw输出的解算方法设置
+// 选择解算方法
 // 0 关闭
-// 1 Mag_Get_Yaw（仅磁力计+倾斜补偿）
-// 2 Mahony AHRS（九轴，仅输出Yaw）
-// 3 Madgwick AHRS（九轴，仅输出Yaw）
-// 4 TiltMagYaw（重力投影磁修正陀螺积分）
-#define YAW_ONLY_ANALYSIS_MODE        0
-
-// IMU_解算模式设置（全欧拉角解算）
-// 0 关闭
-// 3 三轴
-// 6 六轴
-// 9 九轴
-#define IMU_ANALYSIS_MODE             6
-
-// YAW_ONLY_ANALYSIS_MODE和IMU_ANALYSIS_MODE是互斥的，不能同时开启
-// 仅Yaw输出的解算方法设置优先级高，会覆盖IMU_ANALYSIS_MODE的设置
+// 1 三轴
+// 2 六轴
+// 3 九轴
+// 4 [仅输出Yaw]Mag_Get_Yaw(仅磁力计+倾斜补偿)
+// 5 [仅输出Yaw]Mahony AHRS(九轴)
+// 6 [仅输出Yaw]Madgwick AHRS(九轴)
+// 7 [仅输出Yaw]TiltMagYaw(重力投影磁修正陀螺积分)
+#define DEFINE_IMU_ANALYSIS_MODE       2
 
 
 // 采样周期设置
@@ -61,6 +51,8 @@ void IMU_Update_Data(void);
 
 // 应用加速度计数据
 void    IMU_Acc_Apply       (float *ax, float *ay, float *az);
+
+
 
 /*======================================================*/
 /*[陀螺仪校准]********************************************/
@@ -101,6 +93,7 @@ void    IMU_Gyro_Apply       (Gyro_Calib_StructDef *cal, float *gx, float *gy, f
 /*======================================================*/
 /********************************************[陀螺仪校准]*/
 /*======================================================*/
+
 
 
 /*======================================================*/
@@ -149,9 +142,10 @@ void    IMU_Mag_Apply       (Mag_Calib_StructDef *cal, int16_t *mx, int16_t *my,
 /*======================================================*/
 
 
-// // IMU姿态解算
-// void    IMU_Update_Analysis         (void);
 
+/*======================================================*/
+/*[解算结构体定义]*****************************************/
+/*======================================================*/
 // 四元数结构体
 typedef struct {
     float q0;
@@ -220,19 +214,29 @@ typedef struct {
     Madgwick_AHRS_StructDef madgwick;
     TiltMagYaw_StructDef tilt_mag_yaw;
 } YawOnly_UnionDef;
+/*======================================================*/
+/*****************************************[解算结构体定义]*/
+/*======================================================*/
 
 // 全局变量声明
-#if IMU_ANALYSIS_MODE == 3
-extern ThreeAxis_StructDef three_axis;
+#if DEFINE_IMU_ANALYSIS_MODE == 1
+
+    extern ThreeAxis_StructDef three_axis;
 #endif
-#if IMU_ANALYSIS_MODE == 6
-extern Mahony_AHRS_StructDef six_axis;
+#if DEFINE_IMU_ANALYSIS_MODE == 2
+
+    extern Mahony_AHRS_StructDef six_axis;
 #endif
-#if IMU_ANALYSIS_MODE == 9
-extern NineAxis_StructDef nine_axis;
+#if DEFINE_IMU_ANALYSIS_MODE == 3
+
+    extern NineAxis_StructDef nine_axis;
 #endif
-#if YAW_ONLY_ANALYSIS_MODE > 0
-extern YawOnly_UnionDef yaw_only;
+#if DEFINE_IMU_ANALYSIS_MODE == 4 || \
+    DEFINE_IMU_ANALYSIS_MODE == 5 || \
+    DEFINE_IMU_ANALYSIS_MODE == 6 || \
+    DEFINE_IMU_ANALYSIS_MODE == 7
+
+    extern YawOnly_UnionDef yaw_only;
 #endif
 
 // IMU姿态解算
