@@ -190,7 +190,7 @@ int IMU_Gyro_Calib_Check(Gyro_Calib_StructDef *cal)
 // 使用示例     IMU_Gyro_Apply(&gyro_cal, &gx, &gy, &gz);
 // 备注信息     函数内部直接使用全局变量 imu963ra_gyro_x/y/z 获取原始数据
 //              校准完成后，将校准结果存储到传入的指针中
-//              未校准时，直接将原始数据存储到传入的指针中
+//              未校准时，应用默认的校准参数
 //-------------------------------------------------------------------------------------------------------------------
 void IMU_Gyro_Apply(Gyro_Calib_StructDef *cal, float *gx, float *gy, float *gz)
 {
@@ -205,12 +205,16 @@ void IMU_Gyro_Apply(Gyro_Calib_StructDef *cal, float *gx, float *gy, float *gz)
         if (-7.0f <= *gy && *gy <= 7.0f){*gy = 0.0f;}
         if (-7.0f <= *gz && *gz <= 7.0f){*gz = 0.0f;}
     }
-    // 未校准时，直接将原始数据存储到传入的指针中
+    // 未校准时，应用默认的校准参数
     else
     {
-        *gx = (float)imu963ra_gyro_x;
-        *gy = (float)imu963ra_gyro_y;
-        *gz = (float)imu963ra_gyro_z;
+        *gx = (float)imu963ra_gyro_x - 4.7f;
+        *gy = (float)imu963ra_gyro_y + 8.1f;
+        *gz = (float)imu963ra_gyro_z + 6.9f;
+
+        if (-7.0f <= *gx && *gx <= 7.0f){*gx = 0.0f;}
+        if (-7.0f <= *gy && *gy <= 7.0f){*gy = 0.0f;}
+        if (-7.0f <= *gz && *gz <= 7.0f){*gz = 0.0f;}
     }
 }
 /*======================================================*/
@@ -830,6 +834,52 @@ void IMU_getEulerianAngles(void)
     // 赋值给项目统一的Yaw解算结果变量
     Yaw_Result = Daty_Z;
 }
+
+//-------------------------------------------------------------------------------------------------------------------
+// 函数简介     将当前六轴解算的 Yaw 归零 (与三轴效果一致)
+// 参数说明     void
+// 返回参数     void
+// 使用示例     ICM_zero_yaw();
+// 备注信息     包含死区滤波变量重置
+//-------------------------------------------------------------------------------------------------------------------
+void ICM_zero_yaw(void)
+{
+    float q0 = Q_info.q0;
+    float q1 = Q_info.q1;
+    float q2 = Q_info.q2;
+    float q3 = Q_info.q3;
+
+    float yaw = atan2f(2.0f * (q1 * q2 + q0 * q3), -2.0f * (q2 * q2 + q3 * q3) + 1.0f);
+
+    float half = -0.5f * yaw;
+    float cz = cosf(half);
+    float sz = sinf(half);
+
+    float nq0 = cz * q0 - sz * q3;
+    float nq1 = cz * q1 + sz * q2;
+    float nq2 = cz * q2 - sz * q1;
+    float nq3 = cz * q3 + sz * q0;
+
+    float norm = sqrtf(nq0 * nq0 + nq1 * nq1 + nq2 * nq2 + nq3 * nq3);
+    if (norm > 0.0f)
+    {
+        norm = 1.0f / norm;
+        Q_info.q0 = nq0 * norm;
+        Q_info.q1 = nq1 * norm;
+        Q_info.q2 = nq2 * norm;
+        Q_info.q3 = nq3 * norm;
+    }
+
+    imu_data_t.yaw = 0.0f;
+    // 赋值给项目统一的Yaw解算结果变量
+    Yaw_Result = 0.0f;
+
+    // 重置死区滤波相关的变量
+    last_raw_yaw = 0.0f;
+    accumulated_yaw_drift = 0.0f;
+    yaw_first_run = true;
+}
+
 /*******************************************************************************************************************/
 /*---------------------------------------------------------------------------------------------[E] [全欧拉角]六轴 [E]*/
 /*******************************************************************************************************************/
@@ -933,7 +983,7 @@ void IMU_Reset_Data (void)
     #elif DEFINE_IMU_ANALYSIS_MODE == 1
 
     #elif DEFINE_IMU_ANALYSIS_MODE == 2
-
+        ICM_zero_yaw();
     #elif DEFINE_IMU_ANALYSIS_MODE == 3
 
     #elif DEFINE_IMU_ANALYSIS_MODE == 4

@@ -82,7 +82,9 @@ void Debug_IMU963RA_UI(void)
     // 5 [仅输出Yaw]Mahony AHRS(九轴)
     // 6 [仅输出Yaw]Madgwick AHRS(九轴)
     // 7 [仅输出Yaw]TiltMagYaw(重力投影磁修正陀螺积分)
-    #if   DEFINE_IMU_ANALYSIS_MODE == 1
+    #if   DEFINE_IMU_ANALYSIS_MODE == 0 
+        ips200_show_string(40 ,48 , "OFF");
+    #elif DEFINE_IMU_ANALYSIS_MODE == 1
         ips200_show_string(40 ,48 , "3Axis");
     #elif DEFINE_IMU_ANALYSIS_MODE == 2
         ips200_show_string(40 ,48 , "6Axis");
