@@ -2,23 +2,33 @@
 #define __ld_usart_h
 
 #include "zf_common_headfile.h"
+#include <stdint.h>
 
-// 乐动D300 STL19雷达数据包格式
 #define POINT_PER_PACK   12
-#define HEADER  0x54
-typedef struct __attribute__((packed)){
-    uint16 distance;
-    uint8  intensity;
+#define PACKET_SIZE      47        // 1+1+2+2+12*3+2+2+1
+
+#pragma pack(1)
+typedef struct {
+    uint16_t distance;
+    uint8_t  intensity;
 } LidarPointStructDef;
-typedef struct __attribute__((packed)){
-    uint8 header;
-    uint8 ver_len;
-    uint16 speed;
-    uint16 start_angle;
+
+typedef struct {
+    uint8_t  header;
+    uint8_t  ver_len;
+    uint16_t speed;
+    uint16_t start_angle;
     LidarPointStructDef point[POINT_PER_PACK];
-    uint16 end_angle;
-    uint16 timestamp;
-    uint8 crc8;
-}LiDARFrameTypeDef;
+    uint16_t end_angle;
+    uint16_t timestamp;
+    uint8_t  crc8;
+} LiDARFrameTypeDef;
+#pragma pack()
+
+extern LiDARFrameTypeDef g_lidar_frame;
+extern volatile bool g_lidar_frame_valid;
+
+bool ld_usart_init(const char *device, int baudrate);
+void ld_usart_task(void);
 
 #endif

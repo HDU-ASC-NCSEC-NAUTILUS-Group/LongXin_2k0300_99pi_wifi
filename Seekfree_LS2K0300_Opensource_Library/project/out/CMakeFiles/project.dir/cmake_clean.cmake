@@ -43,6 +43,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/project.dir/home/lwq/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/image_process.cpp.o.d"
   "CMakeFiles/project.dir/home/lwq/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/imu.cpp.o"
   "CMakeFiles/project.dir/home/lwq/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/imu.cpp.o.d"
+  "CMakeFiles/project.dir/home/lwq/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/ld_usart.cpp.o"
+  "CMakeFiles/project.dir/home/lwq/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/ld_usart.cpp.o.d"
   "CMakeFiles/project.dir/home/lwq/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/pid.cpp.o"
   "CMakeFiles/project.dir/home/lwq/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/pid.cpp.o.d"
   "CMakeFiles/project.dir/home/lwq/桌面/LongXin_2k0300_99pi_wifi/Seekfree_LS2K0300_Opensource_Library/project/code/servo.cpp.o"
