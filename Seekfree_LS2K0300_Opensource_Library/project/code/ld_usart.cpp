@@ -11,6 +11,14 @@ static int uart_fd = -1;
 LiDARFrameTypeDef g_lidar_frame;
 volatile bool g_lidar_frame_valid = false;
 
+typedef struct {
+    float angle;            // 平均角度 (度)
+    uint16_t distance;      // 平均距离 (mm)
+} PointData_t;
+
+// 假设全局定义了 50 个元素的环形缓冲，供避障决策使用
+extern PointData_t PointDataProcess[50];
+
 // CRC-8 表（与官方手册完全一致）
 static const uint8_t crc8_table[256] = {
     0x00,0x4d,0x9a,0xd7,0x79,0x34,0xe3,0xa6,
@@ -53,6 +61,9 @@ static uint8_t CalCRC8(const uint8_t *p, uint8_t len) {
     return crc;
 }
 
+//----------------------------------------------------------
+// 雷达数据包初始化判断，来判断是否成功连接串口
+//----------------------------------------------------------
 bool ld_usart_init(const char *device, int baudrate) {
     uart_fd = open(device, O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (uart_fd < 0) {
@@ -88,6 +99,10 @@ bool ld_usart_init(const char *device, int baudrate) {
     return true;
 }
 
+//----------------------------------------------------------
+// 雷达数据包解析函数，解析360°所有方向的点云数据，并存入全局变量 g_lidar_frame 中
+// 使用方法：在中断中调用 ld_usart_task();
+//----------------------------------------------------------
 void ld_usart_task(void) {
     if (uart_fd < 0) return;
 
@@ -164,4 +179,54 @@ void ld_usart_task(void) {
                 break;
         }
     }
+}
+
+//----------------------------------------------------------
+// 数据处理函数，提取前方 ±50° 范围内的点，并计算平均距离
+// 使用方法：在中断中调用 data_process();
+//----------------------------------------------------------
+void data_process(void)
+{
+    static uint8_t data_cnt = 0;   // 环形缓冲索引
+    uint8_t i;
+    uint32_t distance_sum = 0;
+    uint16_t ave_distance = 0;
+    float area_angle;
+    float start_angle, end_angle;
+
+    // 等待新的有效帧
+    if (!g_lidar_frame_valid) {
+        return;
+    }
+
+    // 角度转换（原始数据单位 0.01°，除以 100 得到度）
+    start_angle = g_lidar_frame.start_angle / 100.0f;
+    end_angle   = g_lidar_frame.end_angle   / 100.0f;
+
+    // 处理跨越 0° 的情况，保证 end_angle > start_angle
+    if (start_angle > end_angle) {
+        end_angle += 360.0f;
+    }
+    area_angle = start_angle + (end_angle - start_angle) / 2.0f;
+    if (area_angle >= 360.0f) {
+        area_angle -= 360.0f;
+    }
+
+    // 只提取机器人前方 ±50° 范围内的点（对应 >220° 或 <320°）
+    if (area_angle > 220.0f || area_angle < 320.0f)
+    {
+        // 累加所有 12 个测量点的距离
+        for (i = 0; i < POINT_PER_PACK; i++) {
+            distance_sum += g_lidar_frame.point[i].distance;
+        }
+        ave_distance = (uint16_t)(distance_sum / POINT_PER_PACK);
+
+        // 存入环形数组，覆盖旧数据
+        PointDataProcess[data_cnt].angle    = area_angle;
+        PointDataProcess[data_cnt].distance = ave_distance;
+        data_cnt = (data_cnt + 1) % 50;    // 循环递增
+    }
+
+    // 标记当前帧已处理完毕
+    g_lidar_frame_valid = false;
 }

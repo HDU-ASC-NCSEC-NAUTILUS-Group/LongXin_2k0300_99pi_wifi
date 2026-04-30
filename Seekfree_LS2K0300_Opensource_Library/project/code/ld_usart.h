@@ -30,5 +30,6 @@ extern volatile bool g_lidar_frame_valid;
 
 bool ld_usart_init(const char *device, int baudrate);
 void ld_usart_task(void);
+void data_process(void);
 
 #endif
