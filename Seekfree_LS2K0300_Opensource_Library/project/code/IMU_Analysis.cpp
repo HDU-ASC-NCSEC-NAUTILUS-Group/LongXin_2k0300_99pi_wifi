@@ -6,8 +6,7 @@
 *              3. 磁力计校准：支持Min-Max法和椭球拟合法，旋转设备采集数据
 *              4. 磁力计校准方法通过 MAG_CALIB_METHOD 宏选择（1:Min-Max, 2:椭球拟合）
 ********************************************************************************************************************/
-#include "zf_device_imu963ra.h"
-#include "zf_driver_file.h"
+#include "zf_common_headfile.h"
 
 #include "IMU_Analysis.h"
 #include <math.h>

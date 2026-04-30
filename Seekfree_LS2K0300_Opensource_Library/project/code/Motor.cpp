@@ -3,9 +3,6 @@
  ********************************************************************************************************************/
 #include "zf_common_headfile.h"
 
-#include "defines.h"
-#include "Motor.h"
-
 
 struct pwm_info motor_1_pwm_info;
 struct pwm_info motor_2_pwm_info;

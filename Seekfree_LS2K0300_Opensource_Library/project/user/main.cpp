@@ -33,12 +33,9 @@
 
 #include "zf_common_headfile.h"
 
-#include "defines.h"
+
 #include "Menu.h"
-#include "Key.h"
-#include "Motor.h"
-#include "IMU_Analysis.h"
-#include "param_config.h"
+
 
 
 /*******************************************************************************************************************/
@@ -110,6 +107,6 @@ int main(int, char**)
 
     while(1)
     {
-//        Menu_Show();
+        Menu_Show();
     }
 }
