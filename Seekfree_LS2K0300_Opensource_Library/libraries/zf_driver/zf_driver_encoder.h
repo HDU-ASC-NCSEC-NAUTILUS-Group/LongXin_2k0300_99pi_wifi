@@ -37,6 +37,11 @@
 
 #include "zf_common_typedef.h"
 
+// 带方向编码器接口（如不使用可忽略）
 int16 encoder_get_count(const char *path);
+
+// 正交编码器接口
+// 读取累计值，读取后自动清零
+int32 encoder_quad_get_count(const char *path);
 
 #endif

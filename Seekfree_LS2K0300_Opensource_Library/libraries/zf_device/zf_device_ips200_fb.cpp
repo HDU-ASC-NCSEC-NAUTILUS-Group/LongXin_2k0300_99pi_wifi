@@ -1,4 +1,3 @@
-
 #include "zf_device_ips200_fb.h"
 #include "zf_common_font.h"
 #include "zf_common_function.h"
@@ -342,10 +341,12 @@ void ips200_Printf(uint16 x, uint16 y, const char *format, ...)
     ips200_show_string(x, y, String);
 }
 
+// 设置画笔颜色
 void ips200_set_pen_color(uint16 color) {
     ips200_pencolor = color;
 }
 
+// 设置背景颜色
 void ips200_set_bg_color(uint16 color) {
     ips200_bgcolor = color;
 }

@@ -131,9 +131,12 @@
 
 //===================================================用户自定义文件===================================================
 #include "image_process.h"
-#include "servo.h"
+#include "IMU_Analysis.h"
+#include "Menu.h"
+#include "Key.h"
+#include "Motor.h"
+#include "param_config.h"
 #include "pid.h"
-#include "imu.h"
 #include "ld_usart.h"
 //===================================================用户自定义文件===================================================
 

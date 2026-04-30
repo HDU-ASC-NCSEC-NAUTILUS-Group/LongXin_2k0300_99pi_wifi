@@ -67,5 +67,3 @@ int16 imu_get_raw(const char *path)
 	file_read_string(path, str);
 	return atoi(str);
 }
-
-

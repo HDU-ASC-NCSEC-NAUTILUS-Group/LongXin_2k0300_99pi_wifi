@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#define BEEP "/dev/zf_driver_gpio_beep"
+#define BEEP    "/dev/zf_driver_gpio_beep"
 
 //ips图像显示外部变量引用
 extern uint16 ips200_pencolor;
@@ -19,7 +19,7 @@ cv::QRCodeDetector qrDecoder;
 
 // 定义文字显示区域（位于图像下方）
 const int text_x = 0;
-const int text_y = UVC_HEIGHT + 5;      // Y坐标起始（图像高度+5像素）
+const int text_y = UVC_HEIGHT + 5 + 32;      // Y坐标起始（图像高度+5像素） + 32像素
 const int text_width = UVC_WIDTH;       // 文字区域宽度（与图像宽相同）
 const int text_height = 16;             // 文字区域高度（单个字符高度）
 const uint16 bg_color = IPS200_DEFAULT_BGCOLOR;  // 背景色（白色）
@@ -40,8 +40,21 @@ static void fill_rect(uint16 x, uint16 y, uint16 width, uint16 height, uint16 co
 // 二维码解码处理
 void QR_process(void)
 {
+
+    if(wait_image_refresh() < 0)
+    {
+        // 摄像头未采集到图像
+        return;
+    }
+
+    // 检查图像数据是否有效
+    if (frame_rgay.empty() || rgay_image == nullptr) {
+    // 图像未就绪，直接返回
+        return;
+    }
+
     // 显示图像到屏幕上（左上角）
-    ips200_show_gray_image(0, 0, rgay_image, UVC_WIDTH, UVC_HEIGHT);
+    ips200_show_gray_image(0, 32, rgay_image, UVC_WIDTH, UVC_HEIGHT);
 
     // ---------- 二维码识别 ----------
     std::string qr_data = qrDecoder.detectAndDecode(frame_rgay);
@@ -56,11 +69,6 @@ void QR_process(void)
 
     // ---------- 显示二维码结果 ----------
     // 设置文字颜色为黑色（背景已为白色）
-    uint16 old_pen = ips200_pencolor;  // 注意：现在可以直接访问，因为添加了设置函数，但这里仍会报错？
-    // 更好的方式是使用设置函数，而不是直接访问变量。
-    // 由于我们添加了设置函数，但未将变量导出，所以不能直接访问 old_pen。
-    // 我们只需要设置新颜色，不需要保存旧值（因为其他显示未使用颜色）。
-    // 因此直接设置颜色即可。
     ips200_set_pen_color(RGB565_BLACK);
     ips200_set_bg_color(bg_color);
 
@@ -127,6 +135,9 @@ static cv::Point2i detect_red_object(const cv::Mat &frame_bgr)
 // 2. 检测红色物体（使用彩色图 frame_rgb）
 //cv::Point2i red_center = detect_red_object(frame_rgb);
 
+int16_t coordinate_x = 0;
+int16_t coordinate_y = 0;
+
 //红色物块跟踪函数
 void object_tracking(void)
 {
@@ -142,7 +153,7 @@ void object_tracking(void)
 
     // 3. 显示彩色图像到屏幕
     //    frame_rgb 是 BGR 顺序，ips200_show_rgb_image 正好接收 BGR24 数据
-    ips200_show_rgb_image(0, 0, frame_rgb.ptr(0), UVC_WIDTH, UVC_HEIGHT);
+    ips200_show_rgb_image(0, 32, frame_rgb.ptr(0), UVC_WIDTH, UVC_HEIGHT);
 
     // 4. 清空文本区域
     fill_rect(text_x, text_y, text_width, text_height, bg_color);

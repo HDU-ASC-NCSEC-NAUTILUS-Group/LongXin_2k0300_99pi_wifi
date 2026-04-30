@@ -52,3 +52,6 @@ include/config/
 # 编辑器产生的文件
 .idea/
 .vscode/
+
+# 构建输出目录
+Seekfree_LS2K0300_Opensource_Library/project/out/

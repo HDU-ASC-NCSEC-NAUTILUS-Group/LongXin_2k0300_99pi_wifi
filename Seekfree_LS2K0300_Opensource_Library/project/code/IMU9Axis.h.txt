@@ -1,0 +1,92 @@
+#ifndef IMU9AXIS_H
+#define IMU9AXIS_H
+
+#include <math.h>
+#include "zf_common_headfile.h"
+#include "IMU.h"
+
+//-------------------------------------------------------------------------------------------------------------------
+//  宏定义
+//-------------------------------------------------------------------------------------------------------------------
+#define YAW_CALC_METHOD      (1)            // 0: 9轴Mahony解算, 1: 3轴磁力计解算, 2: 9轴Madgwick解算, 3: 重力投影磁修正陀螺积分
+#define MAG_CALIB_METHOD     (0)            // 0: 最大最小值校准, 1: 椭球拟合校准
+
+//-------------------------------------------------------------------------------------------------------------------
+//  结构体定义
+//-------------------------------------------------------------------------------------------------------------------
+typedef struct 
+{
+    float ax, ay, az;                       // 加速度计原始数据
+    float gx, gy, gz;                       // 陀螺仪原始数据
+    float mx, my, mz;                       // 磁力计原始数据
+    float mag_declination;                  // 磁偏角
+    float q0, q1, q2, q3;                   // 四元数
+    float Kp, Ki;                           // Mahony AHRS 增益
+    float quick_kp,quick_ki;                // 快速初始化阶段增益
+    float exInt, eyInt, ezInt;              // 误差积分项
+} Mahony_AHRS_StructDef;
+
+typedef struct
+{
+    float offset_x, offset_y, offset_z;      // 磁力计偏移
+    float scale_x, scale_y, scale_z;        // 磁力计比例因子
+    float calibration_done;                 // 校准完成标志
+    int16_t max_x, min_x;                  // 磁力计X轴最大最小值
+    int16_t max_y, min_y;                  // 磁力计Y轴最大最小值
+    int16_t max_z, min_z;                  // 磁力计Z轴最大最小值
+} Mag_Calibration_StructDef;
+
+typedef struct
+{
+    float mag_declination;                  // 磁偏角
+    float yaw_filter_alpha;                 // Yaw滤波参数
+    float yaw_filtered;                     // 滤波后的Yaw值
+} Mag_Get_Yaw_StructDef;
+
+typedef struct
+{
+    float q0;
+    float q1;
+    float q2;
+    float q3;
+    float beta;
+    float quick_beta;
+    float invSampleFreq;
+    float mag_declination;
+} Madgwick_AHRS_StructDef;
+
+typedef struct
+{
+    float yaw;                              // 当前Yaw估计（度）
+    float yaw_filtered;                     // 低通后的Yaw输出（度）
+    float yaw_error_int;                    // Yaw误差积分项
+    float kp;                               // 磁力计比例修正增益
+    float ki;                               // 磁力计积分修正增益
+    float quick_kp;                         // 快速收敛阶段比例修正增益
+    float quick_ki;                         // 快速收敛阶段积分修正增益
+    float yaw_filter_alpha;                 // 输出低通滤波系数
+    float mag_declination;                  // 磁偏角（度）
+} TiltMagYaw_StructDef;
+
+//-------------------------------------------------------------------------------------------------------------------
+//  外部变量声明
+//-------------------------------------------------------------------------------------------------------------------
+extern Mahony_AHRS_StructDef Mahony_ahrs;
+extern Mag_Get_Yaw_StructDef Mag_ahrs;
+extern Mag_Calibration_StructDef mag_calibration;
+extern Madgwick_AHRS_StructDef madgwick_ahrs;
+extern TiltMagYaw_StructDef tilt_mag_yaw_ahrs;
+
+//-------------------------------------------------------------------------------------------------------------------
+//  接口函数声明
+//-------------------------------------------------------------------------------------------------------------------
+void Mahony_AHRS_Init(Mahony_AHRS_StructDef *imu);
+void Mag_Get_Yaw_Init(Mag_Get_Yaw_StructDef *imu);
+void Madgwick_AHRS_Init(Madgwick_AHRS_StructDef *ahrs);
+void TiltMagYaw_Init(TiltMagYaw_StructDef *ahrs);
+void Mag_Calibration_Init(Mag_Calibration_StructDef *cal);
+void Mag_Calibration_Update(Mag_Calibration_StructDef *cal, int16_t mx, int16_t my, int16_t mz);
+void Mag_Calibration_Update_Realtime(Mag_Calibration_StructDef *cal, int16_t mx, int16_t my, int16_t mz);
+void IMU_Get_Yaw_Update(float dt);
+
+#endif // IMU9AXIS_H

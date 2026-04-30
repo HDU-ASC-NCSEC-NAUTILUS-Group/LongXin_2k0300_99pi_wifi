@@ -39,11 +39,24 @@
 
 void pwm_get_dev_info(const char *path, struct pwm_info *pwm_info)
 {
-    file_read_dat(path, pwm_info);
+    int ret = file_read_dat(path, pwm_info);
+    if (ret != 0) {
+        // 读取失败时，设置默认值以避免段错误
+        pwm_info->freq = 1000;
+        pwm_info->duty = 0;
+        pwm_info->duty_max = 10000;
+        pwm_info->duty_ns = 0;
+        pwm_info->period_ns = 1000000;
+        pwm_info->clk_freq = 100000000;
+        fprintf(stderr, "Warning: Failed to read PWM device info from %s, using default values\n", path);
+    }
 }
 
 
 void pwm_set_duty(const char *path, uint16 duty)
 {
-    file_write_dat(path, duty);
+    int ret = file_write_dat(path, duty);
+    if (ret != 0) {
+        fprintf(stderr, "Warning: Failed to write PWM duty to %s\n", path);
+    }
 }
