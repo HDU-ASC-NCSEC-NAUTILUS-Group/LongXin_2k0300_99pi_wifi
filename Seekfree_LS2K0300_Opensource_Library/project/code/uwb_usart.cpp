@@ -211,7 +211,8 @@ static void parse_frame(void)
 
     // 原始数据（不做校准）
     g_uwb_data.distance      = dist;
-    g_uwb_data.azimuth_deg   = (float)azim * 0.01f;
+    // g_uwb_data.azimuth_deg   = (float)azim * 0.01f;
+    g_uwb_data.azimuth_deg   = (float)azim;
     g_uwb_data.elevation_deg = (float)elev * 0.01f;
     g_uwb_data.tag_id        = tag_id;
     g_uwb_data.anchor_id     = anc_id;
