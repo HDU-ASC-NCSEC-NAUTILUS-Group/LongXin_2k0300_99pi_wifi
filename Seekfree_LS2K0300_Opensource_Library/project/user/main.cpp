@@ -169,6 +169,7 @@ int main(int, char**)
     {
         // 上下板通信：接收上板指令控制电机
         transport();
+        
 
         // uwb_follow();         // UWB 跟随函数，根据距离和方位角调整电机速度实现跟随
 
