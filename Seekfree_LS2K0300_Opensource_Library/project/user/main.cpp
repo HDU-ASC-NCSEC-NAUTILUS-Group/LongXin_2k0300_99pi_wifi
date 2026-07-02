@@ -96,12 +96,18 @@ void pit_callback_10ms()
     // }
 
     // uwb跟随模式
-    number_task++;
-    if (number_task >= 2) {
-            number_task = 0;
-            uwb_follow();            // 避障函数，计算避障角度并设置电机速度
-    } 
+    // number_task++;
+    // if (number_task >= 2) {
+    //         number_task = 0;
+    //         uwb_follow();            // 跟随函数，读取uwb角度和距离数据并设置电机速度
+    // } 
 
+    // 混合导航模式（避障优先）
+    // number_task++;
+    // if (number_task >= 2) {
+    //         number_task = 0;
+    //         navigate_process();            // 混合导航函数，结合避障和跟随功能
+    // }
 }
 
 void pit_callback_200ms()
@@ -161,8 +167,11 @@ int main(int, char**)
 
     while(1)
     {
+        // 上下板通信：接收上板指令控制电机
+        transport();
+
         // uwb_follow();         // UWB 跟随函数，根据距离和方位角调整电机速度实现跟随
-        
+
 
         // if(Key_Check(KEY_NAME_UP,KEY_DOWN))
         // {

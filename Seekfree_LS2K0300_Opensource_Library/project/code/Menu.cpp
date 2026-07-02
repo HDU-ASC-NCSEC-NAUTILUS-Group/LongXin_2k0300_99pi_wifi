@@ -41,6 +41,12 @@ void Peripheral_Init(void)
 
     // uwb初始化
     uwb_usart_init(UWB_UART_DEVICE, UWB_UART_BAUDRATE);
+
+    // 两板通信初始化
+    if (uart1_init("/dev/ttyS1", 115200))
+    {   
+        printf("failed:uart1串口初始化失败\n");
+    }
 }
 
 /*******************************************************************************************************************/
