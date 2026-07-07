@@ -8,9 +8,15 @@
 #include <errno.h>
 #include <poll.h>
 
+
+/**********************************************************/
+/*[S] 基础驱动 [S]-----------------------------------------*/
+/**********************************************************/
+
 static int  g_uart1_fd = -1;
 static char g_uart1_txbuf[256];
 
+// uart1初始化
 int uart1_init(const char *device, uint32 baudrate)
 {
     g_uart1_fd = open(device, O_RDWR | O_NOCTTY | O_NONBLOCK);
@@ -64,6 +70,7 @@ void uart1_deinit(void)
     }
 }
 
+// uart1发送
 int uart1_send(const uint8 *data, uint32 len)
 {
     if (g_uart1_fd < 0 || data == NULL || len == 0) return -1;
@@ -80,6 +87,7 @@ int uart1_send(const uint8 *data, uint32 len)
     return total;
 }
 
+// uart1接收
 int uart1_recv(uint8 *buf, uint32 maxlen)
 {
     if (g_uart1_fd < 0 || buf == NULL || maxlen == 0) return -1;
@@ -102,6 +110,7 @@ int uart1_available(void)
     return (poll(&pfd, 1, 0) > 0) && (pfd.revents & POLLIN);
 }
 
+// uart1格式化发送
 int uart1_printf(const char *fmt, ...)
 {
     va_list args;
@@ -112,6 +121,58 @@ int uart1_printf(const char *fmt, ...)
     if (len <= 0) return -1;
     return uart1_send((const uint8*)g_uart1_txbuf, (uint32)len);
 }
+
+/**********************************************************/
+/*-----------------------------------------[E] 基础驱动 [E]*/
+/**********************************************************/
+
+// 被验证可行的调用方法
+// 这个测试函数可以直接替代所有main代码进行独立测试使用的
+// 验证时期极早期，请注意
+//
+//
+//
+// #include "zf_common_headfile.h"
+// #include <time.h>
+
+// static uint32_t tick = 0;
+
+// int main()
+// {
+//     if (uart1_init("/dev/ttyS1", 115200)) {
+//         printf("uart1 初始化失败\n");
+//         return -1;
+//     }
+//     printf("uart1 初始化成功, 开始双向通信\n\n");
+
+//     while (1) {
+//         // ===== 接收 =====
+//         uint8_t buf[64];
+//         int n = uart1_recv(buf, sizeof(buf) - 1);
+//         if (n > 0) {
+//             buf[n] = 0;
+//             printf("收到[%dB]: %s", n, buf);
+//         }
+
+//         // ===== 每 2 秒发送一次 =====
+//         tick++;
+//         if (tick >= 200) {
+//             tick = 0;
+
+//             time_t now = time(NULL);
+//             struct tm *t = localtime(&now);
+//             uart1_printf("[%02d:%02d:%02d] board alive\n",
+//                          t->tm_hour, t->tm_min, t->tm_sec);
+//         }
+
+//         system_delay_ms(10);
+//     }
+// }
+
+
+/**********************************************************/
+/*[S] 接收二次封装 [S]--------------------------------------*/
+/**********************************************************/
 
 #define UART1_PARSE_BUF_SIZE  128
 
@@ -161,44 +222,6 @@ char* uart1_recv_frame(void)
     return frame[0] ? frame : NULL;
 }
 
-// 被验证可行的调用方法
-// 这个测试函数可以直接替代所有main代码进行独立测试使用的
-//
-//
-//
-// #include "zf_common_headfile.h"
-// #include <time.h>
-
-// static uint32_t tick = 0;
-
-// int main()
-// {
-//     if (uart1_init("/dev/ttyS1", 115200)) {
-//         printf("uart1 初始化失败\n");
-//         return -1;
-//     }
-//     printf("uart1 初始化成功, 开始双向通信\n\n");
-
-//     while (1) {
-//         // ===== 接收 =====
-//         uint8_t buf[64];
-//         int n = uart1_recv(buf, sizeof(buf) - 1);
-//         if (n > 0) {
-//             buf[n] = 0;
-//             printf("收到[%dB]: %s", n, buf);
-//         }
-
-//         // ===== 每 2 秒发送一次 =====
-//         tick++;
-//         if (tick >= 200) {
-//             tick = 0;
-
-//             time_t now = time(NULL);
-//             struct tm *t = localtime(&now);
-//             uart1_printf("[%02d:%02d:%02d] board alive\n",
-//                          t->tm_hour, t->tm_min, t->tm_sec);
-//         }
-
-//         system_delay_ms(10);
-//     }
-// }
+/**********************************************************/
+/*--------------------------------------[E] 接收二次封装 [E]*/
+/**********************************************************/

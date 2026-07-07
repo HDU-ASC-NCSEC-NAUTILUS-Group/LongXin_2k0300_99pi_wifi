@@ -282,10 +282,6 @@ int Debug_UART1(void)
     const int num_words = 6;
     int window_start = 0;
 
-    #define PARSE_BUF_SIZE 128
-    uint8_t rx_ring[PARSE_BUF_SIZE];
-    int rx_pos = 0;
-
     printf("Debug-UART1\n");
 
     while(1)
@@ -296,12 +292,10 @@ int Debug_UART1(void)
 
         if (Key_Check(KEY_NAME_CONFIRM, KEY_SINGLE))
         {
-            char send_buf[64];
-            int len = snprintf(send_buf, sizeof(send_buf), "[%s,%s,%s]\n",
+            uart1_printf("[%s,%s,%s]\n",
                      words[window_start % num_words],
                      words[(window_start + 1) % num_words],
                      words[(window_start + 2) % num_words]);
-            uart1_send((uint8*)send_buf, len);
 
             ips200_Printf(30, 48, "[%s,%s,%s]\\n  ",
                      words[window_start % num_words],
@@ -315,79 +309,43 @@ int Debug_UART1(void)
             return 0;
         }
 
+        // 使用 uart1_recv_frame() 接收，替代原有内联解析
+        // 使用封装函数的版本已经经过上下板通信测试
+        char *frame = uart1_recv_frame();
+        if (frame)
         {
-            int n = uart1_recv(rx_ring + rx_pos, sizeof(rx_ring) - rx_pos - 1);
-            if (n > 0)
-            {
-                rx_pos += n;
-                rx_ring[rx_pos] = 0;
+            ips200_Printf(30, 80, "%-20s", frame);
 
-                {
-                    char rx_display[64];
-                    int j = 0;
-                    for (int i = 0; rx_ring[i] && j < (int)sizeof(rx_display) - 2; i++)
-                    {
-                        if (rx_ring[i] == '\n')
-                        {
-                            rx_display[j++] = '\\';
-                            rx_display[j++] = 'n';
-                        }
-                        else if (rx_ring[i] == '\r')
-                        {
-                            rx_display[j++] = '\\';
-                            rx_display[j++] = 'r';
-                        }
-                        else
-                        {
-                            rx_display[j++] = rx_ring[i];
-                        }
-                    }
-                    rx_display[j] = '\0';
-                    ips200_Printf(30, 80, "%-20s", rx_display);
-                }
+            char *ch1 = strtok(frame, ",");
+            char *ch2 = strtok(NULL, ",");
+            char *ch3 = strtok(NULL, ",");
 
-                char *end = strchr((char*)rx_ring, '\n');
-                if (end)
-                {
-                    *end = 0;
+            ips200_Printf(40, 128, "%-10s", ch1 ? ch1 : "");
+            ips200_Printf(40, 144, "%-10s", ch2 ? ch2 : "");
+            ips200_Printf(40, 160, "%-10s", ch3 ? ch3 : "");
 
-                    char *start = strchr((char*)rx_ring, '[');
-                    char *stop  = strchr((char*)rx_ring, ']');
-                    if (start && stop && stop > start)
-                    {
-                        char parse_buf[PARSE_BUF_SIZE];
-                        int len = stop - start - 1;
-                        if (len >= PARSE_BUF_SIZE) len = PARSE_BUF_SIZE - 1;
-                        memcpy(parse_buf, start + 1, len);
-                        parse_buf[len] = '\0';
-
-                        char *ch1 = strtok(parse_buf, ",");
-                        char *ch2 = strtok(NULL, ",");
-                        char *ch3 = strtok(NULL, ",");
-
-                        ips200_Printf(40, 128, "%-10s", ch1 ? ch1 : "");
-                        ips200_Printf(40, 144, "%-10s", ch2 ? ch2 : "");
-                        ips200_Printf(40, 160, "%-10s", ch3 ? ch3 : "");
-                        printf("[UART1]Debug:%s,%s,%s\n", ch1 ? ch1 : "", ch2 ? ch2 : "", ch3 ? ch3 : "");
-                    }
-
-                    int remain = rx_pos - (end + 1 - (char*)rx_ring);
-                    if (remain > 0)
-                    {
-                        memmove(rx_ring, end + 1, remain);
-                        rx_pos = remain;
-                    }
-                    else
-                    {
-                        rx_pos = 0;
-                    }
-                }
-            }
+            printf("[Debug]UART1:%s,%s,%s\n", ch1 ? ch1 : "", ch2 ? ch2 : "", ch3 ? ch3 : "");
         }
 
         system_delay_ms(10);
     }
 }
+
+// === 原接收代码（已用 uart1_recv_frame() 替代）===
+// #define PARSE_BUF_SIZE 128
+// uint8_t rx_ring[PARSE_BUF_SIZE];
+// int rx_pos = 0;
+//
+// int n = uart1_recv(rx_ring + rx_pos, sizeof(rx_ring) - rx_pos - 1);
+// if (n > 0)
+// {
+//     rx_pos += n;
+//     rx_ring[rx_pos] = 0;
+//     ...
+//     char *end = strchr((char*)rx_ring, '\n');
+//     if (end) { ... 帧解析与 memmove 滑动窗口 ... }
+// }
+ 
 
 
 // #   #   ###   #####   ###   #####  ####   

@@ -8,16 +8,16 @@
  *         阶段A 根据命令内容分发，阶段B 运行状态机
  *
  * 命令说明:
- *   [01] → distance=1.5m, 触发 MOVING_TO_BEACON
+ *   [01] → distance=0.5m, 触发 MOVING_TO_BEACON
  *   [02] → distance=1.0m, 触发 MOVING_TO_BEACON
  *   [03] → distance=0.5m, 触发 MOVING_TO_BEACON
- *   [DONE] → 仅在 TRANSPORT_DONE 状态下有效，触发 TRANSPORT_AGAIN
+ *   [DONE] → 置位 g_done_pending，在 TRANSPORT_DONE 状态下触发 TRANSPORT_AGAIN
  *
  * 状态机:
  *   IDLE ──(收到 01/02/03)──> MOVING_TO_BEACON
- *   MOVING_TO_BEACON ──(UWB距离 ≤ 0.3m)──> DONE
+ *   MOVING_TO_BEACON ──(UWB距离 ≤ TRANSPORT_STOP_DIST_M)──> DONE
  *   MOVING_TO_BEACON ──(UWB 超时)──> IDLE（安全停车）
- *   DONE ──(收到 DONE 且 current_state==DONE)──> AGAIN
+ *   DONE ──(g_done_pending 为真)──> AGAIN
  *   DONE ──(UWB 超时)──> IDLE（安全停车）
  *   AGAIN ──(UWB距离 ≤ distance)──> PROCESS_DONE
  *   AGAIN ──(UWB 超时 或 distance无效)──> IDLE（安全停车）
@@ -51,6 +51,7 @@ float distance = 0.0f;                          // 从命令解析的目标距�
 static int      g_transport_state   = TRANSPORT_IDLE;   // 当前状态
 static uint32_t g_last_uwb_count    = 0;                // 上一帧 UWB 帧计数
 static uint32_t g_uwb_stale_calls   = 0;                // 连续无新 UWB 帧的调用次数
+static bool     g_done_pending      = false;            // 收到过 DONE 但尚未处理
 
 //==================================================运输任务主函数=====================================================
 
@@ -71,44 +72,54 @@ void transport(void)
 
     if (cmd)
     {
-        // ---- 运输启动命令：01 / 02 / 03（无条件触发）----
+        // ---- 运输启动命令：01 / 02 / 03（无条件触发，覆盖旧任务）----
+        // if (strcmp(cmd, "DONE") == 0)
+        // {
+        //     g_done_pending = true;
+        //     g_transport_state  = TRANSPORT_AGAIN;
+        //     printf("[TRANSPORT] 收到DONE (pending, 当前状态=%d)\r\n", g_transport_state);
+        // }
+
         if (strcmp(cmd, "01") == 0)
         {
-            g_transport_state = TRANSPORT_MOVING_TO_BEACON;
-            g_last_uwb_count  = g_uwb_frame_count;
-            g_uwb_stale_calls = 0;
+            g_done_pending     = false;      // 新任务清除旧的 DONE 等待
+            g_transport_state  = TRANSPORT_MOVING_TO_BEACON;
+            g_last_uwb_count   = g_uwb_frame_count;
+            g_uwb_stale_calls  = 0;
             distance = 0.5f;
             printf("[TRANSPORT] 收到01, 开始直行 目标distance=%.1fm PWM=%d\r\n",
                    distance, TRANSPORT_MOVE_PWM);
         }
         else if (strcmp(cmd, "02") == 0)
         {
-            g_transport_state = TRANSPORT_MOVING_TO_BEACON;
-            g_last_uwb_count  = g_uwb_frame_count;
-            g_uwb_stale_calls = 0;
+            g_done_pending     = false;
+            g_transport_state  = TRANSPORT_MOVING_TO_BEACON;
+            g_last_uwb_count   = g_uwb_frame_count;
+            g_uwb_stale_calls  = 0;
             distance = 1.0f;
             printf("[TRANSPORT] 收到02, 开始直行 目标distance=%.1fm PWM=%d\r\n",
                    distance, TRANSPORT_MOVE_PWM);
         }
         else if (strcmp(cmd, "03") == 0)
         {
-            g_transport_state = TRANSPORT_MOVING_TO_BEACON;
-            g_last_uwb_count  = g_uwb_frame_count;
-            g_uwb_stale_calls = 0;
+            g_done_pending     = false;
+            g_transport_state  = TRANSPORT_MOVING_TO_BEACON;
+            g_last_uwb_count   = g_uwb_frame_count;
+            g_uwb_stale_calls  = 0;
             distance = 0.5f;
             printf("[TRANSPORT] 收到03, 开始直行 目标distance=%.1fm PWM=%d\r\n",
                    distance, TRANSPORT_MOVE_PWM);
         }
 
-        // ---- DONE 命令：仅在 TRANSPORT_DONE 状态下有效 ----
-        else if (strcmp(cmd, "DONE") == 0 && g_transport_state == TRANSPORT_DONE)
+        // ---- DONE 命令：无条件置位 pending，等 TRANSPORT_DONE 时消费 ----
+        else if (strcmp(cmd, "DONE") == 0)
         {
-            g_transport_state = TRANSPORT_AGAIN;
-            g_last_uwb_count  = g_uwb_frame_count;
-            g_uwb_stale_calls = 0;
-            printf("[TRANSPORT] 收到DONE, 开始二次直行 目标distance=%.1fm PWM=%d\r\n",
-                   distance, TRANSPORT_MOVE_PWM);
+            g_done_pending = true;
+            g_transport_state  = TRANSPORT_AGAIN;
+            printf("[TRANSPORT] 收到DONE (pending, 当前状态=%d)\r\n", g_transport_state);
         }
+
+        printf("[TRANSPORT] UART命令: %s\r\n", cmd);
     }
 
     // ==========================================================================
@@ -185,6 +196,19 @@ void transport(void)
             g_uwb_stale_calls++;
         }
 
+        // ---- DONE 已到达（可能提前到达）→ 立即进入 AGAIN ----
+        if (g_done_pending)
+        {
+            g_done_pending     = false;
+            g_transport_state  = TRANSPORT_AGAIN;
+            g_last_uwb_count   = g_uwb_frame_count;
+            g_uwb_stale_calls  = 0;
+            printf("[TRANSPORT] DONE生效, 开始二次直行 目标distance=%.1fm PWM=%d\r\n",
+                   distance, TRANSPORT_MOVE_PWM);
+            // 本次先 return，下个循环再跑 AGAIN 的电机逻辑（避免同一次调用中跳跃两个状态）
+            return;
+        }
+
         // ---- DONE 等待超时保护 ----
         if (g_uwb_stale_calls >= TRANSPORT_UWB_TIMEOUT_LOOPS)
         {
@@ -194,8 +218,6 @@ void transport(void)
             return;
         }
 
-        // 注：不在此处调用 uart1_recv_frame()
-        // "DONE" 命令已由阶段 A 统一接收并分发
         break;
     }
 
