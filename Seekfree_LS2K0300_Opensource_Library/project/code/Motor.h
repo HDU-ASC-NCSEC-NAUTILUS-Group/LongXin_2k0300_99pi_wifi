@@ -42,6 +42,6 @@ void    Motor_Move_Straight     (int16_t speed);
 void    Motor_Spot_Left         (uint16_t speed);
 void    Motor_Spot_Right        (uint16_t speed);
 
-//void    Motor_Output_Turn       (void);
+void    Motor_Output_Turn       (void);
 
 #endif

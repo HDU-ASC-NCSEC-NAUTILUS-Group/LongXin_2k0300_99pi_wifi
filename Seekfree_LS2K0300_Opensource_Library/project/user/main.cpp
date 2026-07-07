@@ -83,7 +83,7 @@ void pit_callback_10ms()
 	// 	Update_Angle_Turn();
 	// }
 
-    //Motor_Output_Turn();
+    // Motor_Output_Turn();
 
     // uwb数据更新
     uwb_usart_task();    // 快速拉取所有可用 UWB 字节并解包
@@ -162,16 +162,15 @@ int main(int, char**)
     pit_timer_200ms->start();
     
     // 定向转向标准位
-    // static int8_t turn_flag = 0;
-    // static int8_t last_turn_flag = 0;
+    static int8_t turn_flag = 0;
+    static int8_t last_turn_flag = 0;
 
     while(1)
     {
         // 上下板通信：接收上板指令控制电机
         transport();
         
-
-        // uwb_follow();         // UWB 跟随函数，根据距离和方位角调整电机速度实现跟随
+        //uwb_follow();         // UWB 跟随函数，根据距离和方位角调整电机速度实现跟随
 
 
         // if(Key_Check(KEY_NAME_UP,KEY_DOWN))
@@ -184,18 +183,20 @@ int main(int, char**)
         //     }
         // }
 
-        // // 仅在按键状态变化时触发一次转向
+        // // // 仅在按键状态变化时触发一次转向
         // if(turn_flag != last_turn_flag)
         // {
         //     last_turn_flag = turn_flag;
         //     if(turn_flag == 1)
         //     {
-        //         Start_Angle_Turn(30.0f);  // 右转30度
+        //         Start_Angle_Turn(90.0f);  // 右转30度
         //     }
         //     else if(turn_flag == 2)
         //     {
-        //         Start_Angle_Turn(-30.0f); // 左转30度
+        //         Start_Angle_Turn(-90.0f); // 左转30度
         //     }
-        // }   
+        // }
+        
+        //Menu_Show();
     }
 }
