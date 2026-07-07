@@ -162,8 +162,8 @@ int main(int, char**)
     pit_timer_200ms->start();
     
     // 定向转向标准位
-    static int8_t turn_flag = 0;
-    static int8_t last_turn_flag = 0;
+    // static int8_t turn_flag = 0;
+    // static int8_t last_turn_flag = 0;
 
     while(1)
     {
