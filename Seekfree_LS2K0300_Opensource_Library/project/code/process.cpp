@@ -38,7 +38,7 @@ enum TransportState
 
 //==================================================运输参数==========================================================
 
-#define TRANSPORT_MOVE_PWM          2500        // 直行 PWM (0~10000)
+#define TRANSPORT_MOVE_PWM          5000        // 直行 PWM (0~10000)
 #define TRANSPORT_STOP_DIST_M       1.5f        // 信标停车距离 (米)
 #define TRANSPORT_UWB_TIMEOUT_LOOPS 2000        // UWB 超时（主循环迭代次数，约等效 2s）
 
@@ -72,13 +72,6 @@ void transport(void)
 
     if (cmd)
     {
-        // ---- 运输启动命令：01 / 02 / 03（无条件触发，覆盖旧任务）----
-        // if (strcmp(cmd, "DONE") == 0)
-        // {
-        //     g_done_pending = true;
-        //     g_transport_state  = TRANSPORT_AGAIN;
-        //     printf("[TRANSPORT] 收到DONE (pending, 当前状态=%d)\r\n", g_transport_state);
-        // }
 
         if (strcmp(cmd, "01") == 0)
         {

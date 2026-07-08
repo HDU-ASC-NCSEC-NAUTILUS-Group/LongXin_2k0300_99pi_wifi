@@ -56,7 +56,7 @@ void Motor_Set(int num, int duty)
                 pwm_set_duty(MOTOR_3_PWM, duty);       // 计算占空比
                 break;
             case 4:
-                gpio_set_level(MOTOR_4_DIR, 1);                                      // DIR输出高电平
+                gpio_set_level(MOTOR_4_DIR, 0);                                      // DIR输出高电平
                 pwm_set_duty(MOTOR_4_PWM, duty);       // 计算占空比
                 break;
             default:
@@ -83,7 +83,7 @@ void Motor_Set(int num, int duty)
                 pwm_set_duty(MOTOR_3_PWM, -duty);      // 计算占空比
                 break;
             case 4:
-                gpio_set_level(MOTOR_4_DIR, 0);                                      // DIR输出低电平
+                gpio_set_level(MOTOR_4_DIR, 1);                                      // DIR输出低电平
                 pwm_set_duty(MOTOR_4_PWM, -duty);      // 计算占空比
                 break;
             default:

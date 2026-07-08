@@ -33,8 +33,8 @@ extern uint8_t is_angle_turning;  // 是否正在执行转向动作的标志
 // uwb跟随函数参数定义
 // UWB 跟随参数
 #define UWB_FOLLOW_DIST_M       1.5f    // 跟随距离阈值（米），超过此距离停车
-#define UWB_FOLLOW_BASE_SPEED   3500    // 基础速度（0~10000），值越大越快
-#define UWB_FOLLOW_STEER_COEFF  800.0f  // 转向灵敏度系数，方位角(度) × 此值 = 差速量
+#define UWB_FOLLOW_BASE_SPEED   5000    // 基础速度（0~10000），值越大越快
+#define UWB_FOLLOW_STEER_COEFF  600.0f  // 转向灵敏度系数，方位角(度) × 此值 = 差速量
 #define UWB_FOLLOW_CALL_MS      50      // uwb_follow 调用间隔（毫秒），需与 main.cpp 中 number_task 计数一致
 #define UWB_FOLLOW_TIMEOUT_MS   200     // UWB 数据超时（毫秒），超时停车
 
@@ -47,7 +47,7 @@ extern uint8_t is_angle_turning;  // 是否正在执行转向动作的标志
 #define NAV_UWB_TIMEOUT_MS      200     // UWB 数据超时（毫秒）
 #define NAV_CALL_MS             50      // navigate_process 调用间隔（毫秒）
 // 超时调用次数 = NAV_UWB_TIMEOUT_MS / NAV_CALL_MS = 4
-#define NAV_AVOID_SPEED         3600    // 避障转向速度
+#define NAV_AVOID_SPEED         5000    // 避障转向速度
 
 // 雷达避障函数
 void avoid(void);
