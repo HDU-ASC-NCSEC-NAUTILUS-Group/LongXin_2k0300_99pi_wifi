@@ -106,7 +106,7 @@ void transport(void)
             g_transport_state  = TRANSPORT_MOVING_TO_BEACON;
             g_last_uwb_count   = g_uwb_frame_count;
             g_uwb_stale_calls  = 0;
-            distance = 0.5f;
+            distance = 1.5f;
             printf("[TRANSPORT] 收到03, 开始直行 目标distance=%.1fm PWM=%d\r\n",
                    distance, TRANSPORT_MOVE_PWM);
         }
@@ -170,7 +170,7 @@ void transport(void)
             Motor_Reset_ALL();
             g_transport_state = TRANSPORT_DONE;
             printf("[TRANSPORT] 到达信标 %.2fm, 停车 (目标=%.1fm)\r\n",
-                   dist, distance);
+                   dist, TRANSPORT_STOP_DIST_M);
             return;
         }
 
